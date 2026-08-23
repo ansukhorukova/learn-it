@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-23 — виправлено нечитабельність попередньої редакції: повернуто документовану структуру (окремі `FE`/`BE`/`DB`/`Infra` subgraph'и в кожному вузлі, а не roadmap-граф + таблиця), а перетини стрілок прибрано розбиттям на три рядки-діаграми за функціональними групами (жоден зв'язок при цьому не перетинає межу групи) і окремою вертикально-шаруватою ER-схемою БД.
+Останнє оновлення: 2026-08-24 — Boards overview / Board view / Task CRUD / drag-and-drop позначено done (FE + BE + БД, approved after 4 concurrency-bugs fixed across 5 review rounds); Shared-with-me/board members лишаються planned.
 
 ## Легенда
 
@@ -67,21 +67,21 @@ graph TD
   classDef planned fill:#37474f,color:#cfd8dc,stroke:#263238,stroke-width:1px,stroke-dasharray: 3 3;
 
   subgraph FE["Frontend"]
-    FE_Boards["⬜ FE_Boards<br/>Boards overview:<br/>сітка/лічильники/this week"]
+    FE_Boards["🟩 FE_Boards<br/>Boards overview:<br/>сітка, create/rename/delete"]
     FE_Shared["⬜ FE_Shared<br/>Shared with me"]
-    FE_BoardView["⬜ FE_BoardView<br/>Board view: 3 колонки"]
+    FE_BoardView["🟩 FE_BoardView<br/>Board view: 3 колонки,<br/>drag-and-drop + a11y select"]
   end
 
   subgraph BE["Backend (Node.js REST /api/v1)"]
-    BE_Boards["⬜ BE_Boards<br/>/boards CRUD"]
+    BE_Boards["🟩 BE_Boards<br/>/boards CRUD"]
     BE_BoardMembers["⬜ BE_BoardMembers<br/>/boards/:id/members"]
-    BE_Tasks["⬜ BE_Tasks<br/>/boards/:id/tasks CRUD<br/>+ статус/позиція"]
+    BE_Tasks["🟩 BE_Tasks<br/>/boards/:id/tasks CRUD<br/>+ статус/позиція"]
   end
 
   subgraph DB["PostgreSQL"]
-    DB_Boards["⬜ DB_Boards<br/>boards"]
+    DB_Boards["🟩 DB_Boards<br/>boards"]
     DB_BoardMembers["⬜ DB_BoardMembers<br/>board_members"]
-    DB_Tasks["⬜ DB_Tasks<br/>tasks"]
+    DB_Tasks["🟩 DB_Tasks<br/>tasks"]
   end
 
   FE_Boards --> FE_Shared
@@ -94,7 +94,8 @@ graph TD
   BE_Tasks --> DB_Tasks
   BE_Tasks --> DB_Boards
 
-  class FE_Boards,FE_Shared,FE_BoardView,BE_Boards,BE_BoardMembers,BE_Tasks,DB_Boards,DB_BoardMembers,DB_Tasks planned;
+  class FE_Boards,FE_BoardView,BE_Boards,BE_Tasks,DB_Boards,DB_Tasks done;
+  class FE_Shared,BE_BoardMembers,DB_BoardMembers planned;
 ```
 
 ## Рядок 3 — Task panel (час, шеринг таски, вкладення, team view)
@@ -159,9 +160,9 @@ graph TD
   DB_Users["🟩 users<br/>id, email, display_name,<br/>locale, last_sign_in_provider"]
   DB_Attachments["⬜ attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
 
-  DB_Tasks["⬜ tasks<br/>board_id, title,<br/>status, position"]
+  DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position"]
 
-  DB_Boards["⬜ boards<br/>title, description,<br/>accent, owner_id"]
+  DB_Boards["🟩 boards<br/>title, description,<br/>accent, owner_id"]
 
   DB_BoardMembers -->|FK| DB_Boards
   DB_BoardMembers -->|FK| DB_Users
@@ -174,8 +175,8 @@ graph TD
   DB_Attachments -->|FK| DB_Tasks
   DB_Tasks -->|FK| DB_Boards
 
-  class DB_Users done;
-  class DB_BoardMembers,DB_TaskShares,DB_TimeEntries,DB_AttachmentViewers,DB_Attachments,DB_Tasks,DB_Boards planned;
+  class DB_Users,DB_Tasks,DB_Boards done;
+  class DB_BoardMembers,DB_TaskShares,DB_TimeEntries,DB_AttachmentViewers,DB_Attachments planned;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
@@ -187,3 +188,4 @@ graph TD
 - `BE_Health` (`GET /health`) винесений окремим вузлом у BE-шарі Рядка 1, зʼєднаний з `Infra_Docker` — техендпоінт готовності сервісу backend-контейнера, не бізнес-фіча.
 - `Infra_MinIO` показаний і в Рядку 1 (піднято в `docker-compose`), і в Рядку 3 (куди `BE_Attachments` писатиме файли) — це один і той самий вузол інфраструктури, повторений у двох діаграмах для наочності, не два різні сховища.
 - Секції "Поза межами цього етапу" з CLAUDE.md (публічні посилання, коментарі, нотифікації, календар, складні графіки) свідомо не винесені на карту — вони поза скоупом продукту, не просто "ще не зроблено".
+- З фічі Boards/Board view/Task CRUD (2026-08-24): у проєкті зʼявилась перша автоматизована тест-інфраструктура — `vitest` проти окремої тестової Postgres-БД, `backend/test/concurrency/` (6 сценаріїв). Спільні locking-хелпери `backend/src/lib/db.js` (`lockRow`/`lockedUpdate`) і `backend/src/lib/authz.js` (`getOwnedBoard`) — це деталі реалізації всередині вже done-вузлів `BE_Boards`/`BE_Tasks`, окремих вузлів на карті не заведено, щоб не подрібнювати BE-шар нижче рівня ендпоінтів; згадано тут як доступна для наступних фіч база (regression-покриття конкурентних сценаріїв).

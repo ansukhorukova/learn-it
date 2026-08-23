@@ -34,3 +34,37 @@ PROJECT_MAP.md — історія змін
     docker-compose.yml і код — поза скоупом картографа.
   Коміт: docs: update PROJECT_MAP.md — відновлено FE/BE/DB/Infra структуру
     та ER-схему БД, перетини стрілок усунено розбиттям на рядки
+
+2026-08-24 — Boards overview / Board view / Task CRUD / drag-and-drop: done
+  Підсумок від fullstack-developer + code-reviewer (Approve, 4 concurrency-
+    бага знайдено й виправлено за 5 раундів рев'ю, системний фікс закрито
+    регресійними тестами):
+    - BE: GET/POST /boards, GET/PATCH/DELETE /boards/:id,
+      GET/POST /boards/:id/tasks, PATCH/DELETE /tasks/:id — service-layer
+      owner_id-авторизація (без RLS, за архітектурою CLAUDE.md). Нові Knex-
+      міграції boards/tasks (ON DELETE CASCADE + UNIQUE (board_id, status,
+      position) DEFERRABLE як concurrency-бекстоп). Спільні locking-хелпери
+      backend/src/lib/db.js (lockRow/lockedUpdate) та
+      backend/src/lib/authz.js (getOwnedBoard).
+    - FE: "/" тепер BoardsPage (сітка, create/rename/delete, empty state,
+      локалізований CTA) замість HomePage-заглушки (sign-out перенесено в
+      новий AppHeader). "/boards/:boardId" — BoardViewPage, 3 колонки
+      (Planned/In Progress/Done · PR merged — англійські лейбли лишені як є
+      в обох мовах, свідоме продуктове рішення, не прогалина перекладу),
+      drag-and-drop через @dnd-kit + обовʼязковий доступний <select>-фолбек
+      на кожній картці. Повна EN/UK локалізація.
+    - Тести: backend/test/concurrency/ (vitest, ізольована тестова
+      Postgres-БД) — 6 concurrency-сценаріїв, перша автоматизована тест-
+      інфраструктура в проєкті.
+  Позначено done: FE_Boards, FE_BoardView, BE_Boards, BE_Tasks, DB_Boards,
+    DB_Tasks (Рядок 2 + ER-схема БД).
+  Свідомо лишено planned (не торкнулось цієї фічі): FE_Shared,
+    BE_BoardMembers, DB_BoardMembers — шеринг борду не будувався, лише
+    single-owner. Attachments/time tracking/team view — не чіпались.
+  Нових вузлів на карту не додано — фіча повністю лягла в існуючі вузли
+    Рядка 2. Додано примітку в "Примітки" про нову vitest-інфраструктуру
+    (без окремого вузла — деталь реалізації всередині BE_Boards/BE_Tasks).
+  Нових "відомих прогалин" не залоговано — всі concurrency-баги закриті
+    до approve, не відкладені.
+  Коміт: docs: update PROJECT_MAP.md — Boards/Board view/Task CRUD
+    позначено done після Approve з фіксом concurrency-багів
