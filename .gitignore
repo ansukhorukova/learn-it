@@ -1,0 +1,7 @@
+.env
+firebase-service-account.json
+node_modules/
+db_data/
+minio_data/
+dist/
+npm-debug.log*
