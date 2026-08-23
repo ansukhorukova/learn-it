@@ -1,0 +1,66 @@
+{
+  "app": {
+    "name": "Learning Time Tracker"
+  },
+  "auth": {
+    "title": "Вхід — Learning Time Tracker",
+    "description": "Увійдіть або створіть акаунт, щоб відстежувати час навчання.",
+    "tabs": {
+      "signin": "Увійти",
+      "signup": "Зареєструватися"
+    },
+    "email": {
+      "label": "Емейл",
+      "placeholder": "you@example.com"
+    },
+    "password": {
+      "label": "Пароль",
+      "placeholder": "Введіть пароль"
+    },
+    "confirmPassword": {
+      "label": "Підтвердіть пароль"
+    },
+    "submit": {
+      "signin": "Увійти",
+      "signup": "Створити акаунт",
+      "loading": "Виконується вхід…"
+    },
+    "google": {
+      "button": "Продовжити з Google"
+    },
+    "divider": {
+      "or": "або"
+    },
+    "switchToSignup": "Немає акаунту? Зареєструватися",
+    "switchToSignin": "Вже маєте акаунт? Увійти",
+    "validation": {
+      "emailRequired": "Вкажіть емейл",
+      "emailInvalid": "Введіть коректний емейл",
+      "passwordRequired": "Вкажіть пароль",
+      "passwordMinLength": "Пароль має містити щонайменше 8 символів",
+      "passwordsMustMatch": "Паролі не збігаються"
+    },
+    "error": {
+      "emailAlreadyInUse": "Цей емейл вже зареєстровано. Спробуйте увійти.",
+      "wrongPassword": "Неправильний емейл або пароль.",
+      "useGoogleInstead": "Цей емейл вже зареєстровано через Google. Увійдіть через Google.",
+      "useEmailInstead": "Цей емейл вже зареєстровано з паролем. Увійдіть за допомогою емейлу та пароля.",
+      "popupClosed": "Вхід через Google скасовано.",
+      "networkError": "Помилка мережі. Перевірте з'єднання та спробуйте ще раз.",
+      "generic": "Щось пішло не так. Спробуйте ще раз."
+    }
+  },
+  "home": {
+    "signedInAs": "Ви увійшли як {email}",
+    "signOut": "Вийти"
+  },
+  "errors": {
+    "auth": {
+      "tokenMissing": "Щоб продовжити, увійдіть в акаунт.",
+      "tokenInvalid": "Термін дії сесії закінчився. Увійдіть ще раз.",
+      "invalidEmail": "Потрібно вказати коректний емейл.",
+      "rateLimited": "Забагато запитів. Спробуйте пізніше."
+    },
+    "generic": "Щось пішло не так. Спробуйте ще раз."
+  }
+}

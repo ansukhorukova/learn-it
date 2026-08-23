@@ -1,0 +1,66 @@
+{
+  "app": {
+    "name": "Learning Time Tracker"
+  },
+  "auth": {
+    "title": "Sign in — Learning Time Tracker",
+    "description": "Sign in or create an account to track your learning time.",
+    "tabs": {
+      "signin": "Sign in",
+      "signup": "Sign up"
+    },
+    "email": {
+      "label": "Email",
+      "placeholder": "you@example.com"
+    },
+    "password": {
+      "label": "Password",
+      "placeholder": "Enter your password"
+    },
+    "confirmPassword": {
+      "label": "Confirm password"
+    },
+    "submit": {
+      "signin": "Sign in",
+      "signup": "Create account",
+      "loading": "Signing in…"
+    },
+    "google": {
+      "button": "Continue with Google"
+    },
+    "divider": {
+      "or": "or"
+    },
+    "switchToSignup": "Don't have an account? Sign up",
+    "switchToSignin": "Already have an account? Sign in",
+    "validation": {
+      "emailRequired": "Email is required",
+      "emailInvalid": "Enter a valid email address",
+      "passwordRequired": "Password is required",
+      "passwordMinLength": "Password must be at least 8 characters",
+      "passwordsMustMatch": "Passwords do not match"
+    },
+    "error": {
+      "emailAlreadyInUse": "This email is already registered. Try signing in instead.",
+      "wrongPassword": "Incorrect email or password.",
+      "useGoogleInstead": "This email is already registered with Google. Continue with Google to sign in.",
+      "useEmailInstead": "This email is already registered with a password. Sign in with your email and password instead.",
+      "popupClosed": "Google sign-in was cancelled.",
+      "networkError": "Network error. Please check your connection and try again.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "home": {
+    "signedInAs": "Signed in as {email}",
+    "signOut": "Sign out"
+  },
+  "errors": {
+    "auth": {
+      "tokenMissing": "You need to sign in to continue.",
+      "tokenInvalid": "Your session has expired. Please sign in again.",
+      "invalidEmail": "A valid email address is required.",
+      "rateLimited": "Too many requests. Please try again later."
+    },
+    "generic": "Something went wrong. Please try again."
+  }
+}

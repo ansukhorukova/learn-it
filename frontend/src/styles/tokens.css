@@ -1,0 +1,50 @@
+/*
+ * Design tokens — CLAUDE.md "Стилізація": warm dark surfaces, one amber
+ * accent reserved for active-timer state elsewhere in the app, Sora/Manrope
+ * font pairing. No component should hardcode a color literal — reference
+ * these custom properties instead.
+ */
+:root {
+  /* Warm dark surfaces */
+  --color-bg: #1a1510;
+  --color-surface: #241d15;
+  --color-surface-raised: #2e2519;
+  --color-border: #3d3122;
+  --color-border-strong: #56452e;
+
+  /* Text */
+  --color-text: #f3ead9;
+  --color-text-muted: #b9a98d;
+  --color-text-faint: #8b7c63;
+
+  /* Accent — reserved for active-timer UI (not used on the auth screen) */
+  --color-accent-amber: #e0982c;
+  --color-accent-amber-strong: #f3ad3f;
+
+  /* Status */
+  --color-danger: #e2564f;
+  --color-danger-bg: #3a201d;
+  --color-danger-border: #5c2e28;
+
+  --color-focus-ring: #d8c9a8;
+
+  /* Typography */
+  --font-heading: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --shadow-card: 0 24px 60px rgba(0, 0, 0, 0.4);
+}

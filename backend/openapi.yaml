@@ -1,0 +1,192 @@
+openapi: 3.0.3
+info:
+  title: Learning Time Tracker API
+  version: '1'
+  description: >
+    API-first backend for Learning Time Tracker. FE never talks to the
+    database or file storage directly — every read/write goes through this
+    API. Auth: FE signs in via Firebase client SDK (email+password or
+    Google); every protected endpoint requires a Firebase ID token in
+    `Authorization: Bearer <token>`, verified server-side via Firebase Admin
+    SDK.
+servers:
+  - url: /api/v1
+
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      operationId: getHealth
+      tags: [health]
+      security: []
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /users/me:
+    get:
+      summary: Get (and lazily create) the current user's profile
+      description: >
+        Verifies the Firebase ID token and upserts a `users` row keyed by
+        the Firebase UID if one doesn't exist yet (idempotent — safe to call
+        on every sign-in, either provider). Called by the FE immediately
+        after any successful sign-in.
+      operationId: getCurrentUser
+      tags: [users]
+      security:
+        - firebaseIdToken: []
+      parameters:
+        - name: locale
+          in: query
+          required: false
+          description: >
+            Browser-detected locale (e.g. `en`, `uk`), used only to seed the
+            `locale` column when a new user row is created on first sign-in.
+            Ignored for an existing user — never overwrites a persisted
+            preference.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The caller's user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Missing, malformed, or invalid/expired Firebase ID token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /auth/provider-hint:
+    get:
+      summary: Which provider an email last signed in with (signup-conflict path only)
+      description: >
+        Intentionally unauthenticated. Used ONLY by the frontend after
+        Firebase's own `createUserWithEmailAndPassword` has already
+        rejected a signup attempt with `auth/email-already-in-use` — i.e.
+        the email's existence is already disclosed by Firebase before this
+        endpoint is ever called. This endpoint adds only "which of the two
+        supported providers (password/google.com)", so the frontend can
+        show "this email is registered via Google" instead of a generic
+        message. Never called from the sign-in path — sign-in keeps
+        wrong-password and unknown-email indistinguishable, untouched by
+        this endpoint.
+
+
+        Rate-limited (see backend/src/routes/auth.route.js for the full
+        decision writeup): max 10 requests/hour per caller IP AND max 5
+        requests/hour per queried email, both independent 1-hour windows.
+        Exceeding either returns 429. This bounds the endpoint's use as an
+        enumeration oracle without removing the "use Google instead" UX
+        entirely.
+      operationId: getAuthProviderHint
+      tags: [auth]
+      security: []
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: Provider hint (null if unknown, e.g. no matching user yet)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                    nullable: true
+                    enum: [password, google.com, null]
+                required: [provider]
+        '400':
+          description: Missing/empty `email` query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Per-IP or per-email rate limit exceeded (see description above)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+components:
+  securitySchemes:
+    firebaseIdToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token, verified via Firebase Admin SDK.
+
+  schemas:
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Firebase UID
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        locale:
+          type: string
+          example: en
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, email, displayName, locale, createdAt]
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: AUTH_TOKEN_INVALID
+            messageKey:
+              type: string
+              description: Localization key the FE looks up in its own locale dictionary.
+              example: errors.auth.tokenInvalid
+            message:
+              type: string
+              description: English fallback for logs/devtools — not shown to end users.
+          required: [code, messageKey]
+      required: [error]
+
+security:
+  - firebaseIdToken: []
