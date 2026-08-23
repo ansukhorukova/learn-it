@@ -141,7 +141,402 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 
+  /boards:
+    get:
+      summary: List the current user's boards
+      description: >
+        Boards overview (US1). Scoped strictly to boards owned by the caller
+        — no "shared with me" boards, since sharing doesn't exist yet.
+        `taskCount` is computed live via COUNT, never denormalized.
+      operationId: listBoards
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The caller's boards
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  boards:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Board'
+                required: [boards]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a board
+      description: Create board (US2). `ownerId` is always the caller's UID.
+      operationId: createBoard
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardWriteRequest'
+      responses:
+        '201':
+          description: The newly created board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '400':
+          description: Empty or too-long title
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /boards/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a single board
+      description: Used by the board view header (US5).
+      operationId: getBoard
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The board exists but belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      summary: Rename / update a board
+      description: >
+        Rename board (US3). Ownership is re-checked server-side on every
+        call — 403 for a non-owner even if they somehow guess a valid board
+        id, defense-in-depth even though there's no sharing UI yet to expose
+        this path.
+      operationId: updateBoard
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardWriteRequest'
+      responses:
+        '200':
+          description: The updated board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '400':
+          description: Empty or too-long title
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The board exists but belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a board
+      description: >
+        Delete board (US4), irreversible. Cascades to all tasks under it at
+        the DB level (`tasks.board_id` is `ON DELETE CASCADE`).
+      operationId: deleteBoard
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The board exists but belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /boards/{id}/tasks:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List tasks for a board
+      description: Board view (US5) — all tasks across all three status columns.
+      operationId: listBoardTasks
+      tags: [tasks]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: Tasks for the board, ordered by status then position
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                required: [tasks]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The board exists but belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a task
+      description: >
+        Create task (US6). Always created with `status: planned`, appended
+        to the end of that column — `position` is assigned server-side, not
+        accepted from the client on create.
+      operationId: createTask
+      tags: [tasks]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 200
+              required: [title]
+      responses:
+        '201':
+          description: The newly created task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Empty or too-long title
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The board exists but belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: >
+            Lost a race with another concurrent write to this column's task
+            ordering (belt-and-suspenders backstop behind server-side row
+            locking — expected to be rare). Safe to retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Update a task's title and/or status+position
+      description: >
+        Backs both the drag-and-drop interaction and its accessible fallback
+        status control (US8), plus task title edits. `position` is a
+        zero-based target index within the destination column (`status`, if
+        given, else the task's current column) — an ordering instruction,
+        not the raw stored position value (an internal, automatically
+        reindexed implementation detail). Ownership is re-checked
+        server-side through the task's parent board on every call — 403 for
+        a non-owner.
+      operationId: updateTask
+      tags: [tasks]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 200
+                status:
+                  type: string
+                  enum: [planned, in_progress, done]
+                position:
+                  type: integer
+                  minimum: 0
+                  description: Zero-based target index within the destination column.
+      responses:
+        '200':
+          description: The updated task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          description: Empty/too-long title, or an invalid status value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: >
+            Lost a race with another concurrent reorder/drag on the same
+            column (belt-and-suspenders backstop behind server-side row
+            locking — expected to be rare). Safe to retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a task
+      description: Delete task (US7), irreversible.
+      operationId: deleteTask
+      tags: [tasks]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
+  responses:
+    Unauthorized:
+      description: Missing, malformed, or invalid/expired Firebase ID token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
   securitySchemes:
     firebaseIdToken:
       type: http
@@ -168,6 +563,77 @@ components:
           type: string
           format: date-time
       required: [id, email, displayName, locale, createdAt]
+
+    Board:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        accent:
+          type: string
+          enum: [teal, rose, violet, sky, moss, clay]
+        ownerId:
+          type: string
+          description: Firebase UID of the owner
+        taskCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, title, description, accent, ownerId, taskCount, createdAt, updatedAt]
+
+    BoardWriteRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          nullable: true
+        accent:
+          type: string
+          enum: [teal, rose, violet, sky, moss, clay]
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [planned, in_progress, done]
+        position:
+          type: integer
+          description: Internal, automatically reindexed ordering value — not meaningful across columns.
+        createdBy:
+          type: string
+          description: Firebase UID of the creator
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, boardId, title, notes, status, position, createdBy, createdAt, updatedAt]
 
     ApiError:
       type: object

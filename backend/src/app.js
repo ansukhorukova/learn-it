@@ -4,6 +4,8 @@ const cors = require('cors');
 const healthRouter = require('./routes/health.route');
 const usersRouter = require('./routes/users.route');
 const authRouter = require('./routes/auth.route');
+const boardsRouter = require('./routes/boards.route');
+const tasksRouter = require('./routes/tasks.route');
 
 const app = express();
 
@@ -33,8 +35,14 @@ app.use('/api/v1/users', usersRouter);
 // comment for why GET /provider-hint is safe to expose without a token.
 app.use('/api/v1/auth', authRouter);
 
-// TODO (future): mount /api/v1/boards, /api/v1/tasks, /api/v1/*/time-entries,
-// /api/v1/*/attachments, /api/v1/*/members, /api/v1/*/shares once
-// acceptance criteria are in place. See CLAUDE.md "API" and "Дані" sections.
+// Boards + tasks (Phase 1 of "boards + tasks" — see CLAUDE.md "API" and
+// "Дані"). requireAuth is applied per-route inside each router, same pattern
+// as usersRouter above.
+app.use('/api/v1/boards', boardsRouter);
+app.use('/api/v1/tasks', tasksRouter);
+
+// TODO (future): mount /api/v1/*/time-entries, /api/v1/*/attachments,
+// /api/v1/*/members, /api/v1/*/shares once acceptance criteria are in place.
+// See CLAUDE.md "API" and "Дані" sections.
 
 module.exports = app;

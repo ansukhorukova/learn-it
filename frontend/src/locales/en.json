@@ -2,6 +2,10 @@
   "app": {
     "name": "Learning Time Tracker"
   },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save"
+  },
   "auth": {
     "title": "Sign in — Learning Time Tracker",
     "description": "Sign in or create an account to track your learning time.",
@@ -51,8 +55,94 @@
     }
   },
   "home": {
-    "signedInAs": "Signed in as {email}",
     "signOut": "Sign out"
+  },
+  "board": {
+    "overview": {
+      "title": "Boards — Learning Time Tracker",
+      "description": "Your learning boards at a glance.",
+      "heading": "Your boards",
+      "loading": "Loading boards…",
+      "empty": "You don't have any boards yet. Create your first one to start tracking learning time."
+    },
+    "create": {
+      "cta": "Create board",
+      "titleLabel": "Title",
+      "accentLabel": "Accent color",
+      "submit": "Create board",
+      "saving": "Creating…",
+      "validation": {
+        "titleRequired": "Board title is required",
+        "titleTooLong": "Board title must be 100 characters or fewer"
+      }
+    },
+    "rename": {
+      "validation": {
+        "titleRequired": "Board title is required",
+        "titleTooLong": "Board title must be 100 characters or fewer"
+      }
+    },
+    "card": {
+      "taskCount": {
+        "one": "{count} task",
+        "other": "{count} tasks"
+      },
+      "totalTimePlaceholder": "—",
+      "rename": "Rename",
+      "delete": "Delete"
+    },
+    "delete": {
+      "confirmTitle": "Delete board?",
+      "confirmMessage": "This will permanently delete \"{title}\" and all of its tasks. This cannot be undone.",
+      "confirmButton": "Delete board"
+    },
+    "accent": {
+      "teal": "Teal",
+      "rose": "Rose",
+      "violet": "Violet",
+      "sky": "Sky",
+      "moss": "Moss",
+      "clay": "Clay"
+    }
+  },
+  "boardView": {
+    "backToBoards": "← All boards",
+    "loading": "Loading board…",
+    "description": "Track tasks and time for this learning board.",
+    "column": {
+      "planned": "Planned",
+      "inProgress": "In Progress",
+      "done": "Done / PR merged",
+      "empty": "No tasks yet"
+    },
+    "card": {
+      "statusLabel": "Status"
+    },
+    "error": {
+      "forbiddenTitle": "You don't have access to this board",
+      "forbiddenBody": "This board belongs to another user. If you think this is a mistake, ask the owner to share it with you.",
+      "notFoundTitle": "Board not found",
+      "notFoundBody": "This board doesn't exist or may have been deleted.",
+      "backToBoards": "Back to your boards"
+    }
+  },
+  "task": {
+    "create": {
+      "cta": "Add task",
+      "titlePlaceholder": "Task title",
+      "submit": "Add task",
+      "saving": "Adding…",
+      "validation": {
+        "titleRequired": "Task title is required",
+        "titleTooLong": "Task title must be 200 characters or fewer"
+      }
+    },
+    "delete": {
+      "cta": "Delete",
+      "confirmTitle": "Delete task?",
+      "confirmMessage": "This will permanently delete \"{title}\". This cannot be undone.",
+      "confirmButton": "Delete task"
+    }
   },
   "errors": {
     "auth": {
@@ -60,6 +150,20 @@
       "tokenInvalid": "Your session has expired. Please sign in again.",
       "invalidEmail": "A valid email address is required.",
       "rateLimited": "Too many requests. Please try again later."
+    },
+    "board": {
+      "notFound": "Board not found.",
+      "forbidden": "You don't have access to this board.",
+      "titleRequired": "Board title is required.",
+      "titleTooLong": "Board title must be 100 characters or fewer."
+    },
+    "task": {
+      "notFound": "Task not found.",
+      "forbidden": "You don't have access to this task.",
+      "titleRequired": "Task title is required.",
+      "titleTooLong": "Task title must be 200 characters or fewer.",
+      "invalidStatus": "Invalid task status.",
+      "positionConflict": "This board changed while you were working. Please try again."
     },
     "generic": "Something went wrong. Please try again."
   }

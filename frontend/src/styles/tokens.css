@@ -21,12 +21,31 @@
   --color-accent-amber: #e0982c;
   --color-accent-amber-strong: #f3ad3f;
 
+  /* Board accent swatches — a small fixed palette for visually
+     distinguishing board cards (boards.accent). Deliberately a separate
+     namespace from --color-accent-amber above: that one is reserved
+     exclusively for active-timer UI per CLAUDE.md "Стилізація", and reusing
+     it here would blur that meaning once per-board timers exist. Components
+     never hardcode a hex value — they map a board's `accent` key (see
+     backend/src/services/boards.service.js ACCENTS /
+     frontend/src/constants/boardAccents.js) to one of these tokens. */
+  --board-accent-teal: #4a9c8f;
+  --board-accent-rose: #c96f6f;
+  --board-accent-violet: #8f7ad1;
+  --board-accent-sky: #5b98c9;
+  --board-accent-moss: #86a35a;
+  --board-accent-clay: #cf9152;
+
   /* Status */
   --color-danger: #e2564f;
   --color-danger-bg: #3a201d;
   --color-danger-border: #5c2e28;
 
   --color-focus-ring: #d8c9a8;
+
+  /* Modal/dialog scrim — warm-tinted black to match the dark surface
+     palette above rather than a neutral black overlay. */
+  --color-overlay: rgba(10, 7, 3, 0.6);
 
   /* Typography */
   --font-heading: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;

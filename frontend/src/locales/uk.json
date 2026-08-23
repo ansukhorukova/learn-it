@@ -2,6 +2,10 @@
   "app": {
     "name": "Learning Time Tracker"
   },
+  "common": {
+    "cancel": "Скасувати",
+    "save": "Зберегти"
+  },
   "auth": {
     "title": "Вхід — Learning Time Tracker",
     "description": "Увійдіть або створіть акаунт, щоб відстежувати час навчання.",
@@ -51,8 +55,96 @@
     }
   },
   "home": {
-    "signedInAs": "Ви увійшли як {email}",
     "signOut": "Вийти"
+  },
+  "board": {
+    "overview": {
+      "title": "Дошки — Learning Time Tracker",
+      "description": "Ваші навчальні дошки одним поглядом.",
+      "heading": "Ваші дошки",
+      "loading": "Завантаження дошок…",
+      "empty": "У вас ще немає дошок. Створіть першу, щоб почати відстежувати час навчання."
+    },
+    "create": {
+      "cta": "Створити дошку",
+      "titleLabel": "Назва",
+      "accentLabel": "Колір акценту",
+      "submit": "Створити дошку",
+      "saving": "Створення…",
+      "validation": {
+        "titleRequired": "Вкажіть назву дошки",
+        "titleTooLong": "Назва дошки має містити не більше 100 символів"
+      }
+    },
+    "rename": {
+      "validation": {
+        "titleRequired": "Вкажіть назву дошки",
+        "titleTooLong": "Назва дошки має містити не більше 100 символів"
+      }
+    },
+    "card": {
+      "taskCount": {
+        "one": "{count} таска",
+        "few": "{count} таски",
+        "many": "{count} тасок",
+        "other": "{count} таски"
+      },
+      "totalTimePlaceholder": "—",
+      "rename": "Перейменувати",
+      "delete": "Видалити"
+    },
+    "delete": {
+      "confirmTitle": "Видалити дошку?",
+      "confirmMessage": "Це остаточно видалить «{title}» і всі її таски. Дію не можна скасувати.",
+      "confirmButton": "Видалити дошку"
+    },
+    "accent": {
+      "teal": "Бірюзовий",
+      "rose": "Рожевий",
+      "violet": "Фіолетовий",
+      "sky": "Блакитний",
+      "moss": "Мохово-зелений",
+      "clay": "Теракотовий"
+    }
+  },
+  "boardView": {
+    "backToBoards": "← Усі дошки",
+    "loading": "Завантаження дошки…",
+    "description": "Відстежуйте таски та час для цієї навчальної дошки.",
+    "column": {
+      "planned": "Planned",
+      "inProgress": "In Progress",
+      "done": "Done / PR merged",
+      "empty": "Ще немає тасок"
+    },
+    "card": {
+      "statusLabel": "Статус"
+    },
+    "error": {
+      "forbiddenTitle": "У вас немає доступу до цієї дошки",
+      "forbiddenBody": "Ця дошка належить іншому користувачу. Якщо вважаєте це помилкою, попросіть власника надати вам доступ.",
+      "notFoundTitle": "Дошку не знайдено",
+      "notFoundBody": "Ця дошка не існує або була видалена.",
+      "backToBoards": "Повернутися до ваших дошок"
+    }
+  },
+  "task": {
+    "create": {
+      "cta": "Додати таску",
+      "titlePlaceholder": "Назва таски",
+      "submit": "Додати таску",
+      "saving": "Додавання…",
+      "validation": {
+        "titleRequired": "Вкажіть назву таски",
+        "titleTooLong": "Назва таски має містити не більше 200 символів"
+      }
+    },
+    "delete": {
+      "cta": "Видалити",
+      "confirmTitle": "Видалити таску?",
+      "confirmMessage": "Це остаточно видалить «{title}». Дію не можна скасувати.",
+      "confirmButton": "Видалити таску"
+    }
   },
   "errors": {
     "auth": {
@@ -60,6 +152,20 @@
       "tokenInvalid": "Термін дії сесії закінчився. Увійдіть ще раз.",
       "invalidEmail": "Потрібно вказати коректний емейл.",
       "rateLimited": "Забагато запитів. Спробуйте пізніше."
+    },
+    "board": {
+      "notFound": "Дошку не знайдено.",
+      "forbidden": "У вас немає доступу до цієї дошки.",
+      "titleRequired": "Вкажіть назву дошки.",
+      "titleTooLong": "Назва дошки має містити не більше 100 символів."
+    },
+    "task": {
+      "notFound": "Таску не знайдено.",
+      "forbidden": "У вас немає доступу до цієї таски.",
+      "titleRequired": "Вкажіть назву таски.",
+      "titleTooLong": "Назва таски має містити не більше 200 символів.",
+      "invalidStatus": "Некоректний статус таски.",
+      "positionConflict": "Дошка змінилася, поки ви працювали. Спробуйте ще раз."
     },
     "generic": "Щось пішло не так. Спробуйте ще раз."
   }

@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('frontend/src/locales/en.json'\\)\\)\")",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('frontend/src/locales/uk.json'\\)\\)\")",
+      "Bash(curl -s http://localhost:4000/api/v1/boards)",
+      "Bash(curl -s -X POST http://localhost:4000/api/v1/boards)",
+      "Bash(grep -v '^$')",
+      "Bash(chmod +x /private/tmp/claude-501/-Users-anastasiya-projects-learn-it/4bec1c6b-5ce9-4c06-8a1f-718fc7ba8f3f/scratchpad/validate.sh)",
+      "Bash(bash /private/tmp/claude-501/-Users-anastasiya-projects-learn-it/4bec1c6b-5ce9-4c06-8a1f-718fc7ba8f3f/scratchpad/validate.sh)",
+      "Bash(node /private/tmp/claude-501/-Users-anastasiya-projects-learn-it/4bec1c6b-5ce9-4c06-8a1f-718fc7ba8f3f/scratchpad/mktoken.js tester-a@example.test tester-tool-a)",
+      "Bash(cp /private/tmp/claude-501/-Users-anastasiya-projects-learn-it/4bec1c6b-5ce9-4c06-8a1f-718fc7ba8f3f/scratchpad/mktoken.js /Users/anastasiya/projects/learn-it/backend/_tmp_mktoken.js)",
+      "Bash(node _tmp_mktoken.js tester-a@example.test tester-tool-a)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s -w '\\\\nSTATUS:%{http_code}\\\\n' -X DELETE __TRACKED_VAR__/boards/__TRACKED_VAR__ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node -e ' *)",
+      "Bash(curl -s __TRACKED_VAR__/boards -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{JSON.parse\\(d\\).boards.forEach\\(b=>console.log\\(b.id,b.title\\)\\)}\\)\")",
+      "Bash(node _tmp_cleanup.js)",
+      "Bash(rm -f /Users/anastasiya/projects/learn-it/backend/_tmp_mktoken.js /Users/anastasiya/projects/learn-it/backend/_tmp_cleanup.js /tmp/token_a.txt /tmp/token_b.txt)",
+      "Bash(grep -nE \"#[0-9a-fA-F]{3,8}|rgb\\\\\\(|rgba\\\\\\(\" /Users/anastasiya/projects/learn-it/frontend/src/pages/BoardsPage.module.css /Users/anastasiya/projects/learn-it/frontend/src/pages/BoardViewPage.module.css /Users/anastasiya/projects/learn-it/frontend/src/components/AppHeader.module.css)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:4000/api/v1/boards)",
+      "Bash(npx eslint *)",
+      "Bash(python3 -)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'../.env'}\\); console.log\\(process.env.DATABASE_URL\\)\")",
+      "Bash(docker cp *)",
+      "Bash(git -C /Users/anastasiya/projects/learn-it diff --stat -- backend/src/services/tasks.service.js backend/src/lib/dbErrors.js backend/src/lib/authz.js)",
+      "Bash(node --check backend/src/services/tasks.service.js)",
+      "Bash(node --check backend/src/services/boards.service.js)",
+      "Bash(git -C /Users/anastasiya/projects/learn-it log --oneline -20)",
+      "Bash(node --check /Users/anastasiya/projects/learn-it/backend/src/services/tasks.service.js)",
+      "Bash(node --check /Users/anastasiya/projects/learn-it/backend/src/services/boards.service.js)",
+      "Bash(git -C /Users/anastasiya/projects/learn-it status --short backend/)",
+      "Bash(DATABASE_URL=\"postgres://app:app@localhost:5432/learning_time_tracker\" npm run test:concurrency)",
+      "Bash(cd /Users/anastasiya/projects/learn-it/backend && cp src/services/boards.service.js /tmp/boards.service.js.bak)",
+      "Bash(DATABASE_URL=\"postgres://app:app@localhost:5432/learning_time_tracker\" npx vitest run test/concurrency/boards.concurrency.test.js)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}

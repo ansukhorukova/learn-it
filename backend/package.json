@@ -9,7 +9,9 @@
     "start": "node src/server.js",
     "migrate": "knex migrate:latest",
     "migrate:rollback": "knex migrate:rollback",
-    "migrate:make": "knex migrate:make"
+    "migrate:make": "knex migrate:make",
+    "test": "vitest run",
+    "test:concurrency": "vitest run test/concurrency"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -20,6 +22,7 @@
     "pg": "^8.13.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "vitest": "^2.1.9"
   }
 }

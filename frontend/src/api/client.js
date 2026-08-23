@@ -33,3 +33,88 @@ export async function fetchProviderHint(email) {
   }
   return res.json();
 }
+
+/**
+ * Thrown by `request()` below for any non-2xx response. Carries the parsed
+ * error envelope (see backend/src/lib/apiError.js) so callers can look up
+ * `messageKey` in the FE's own locale dictionary rather than ever rendering
+ * `message` (English-only, logs/devtools use) to the user.
+ */
+export class ApiRequestError extends Error {
+  constructor(status, code, messageKey, message) {
+    super(message || messageKey);
+    this.status = status;
+    this.code = code;
+    this.messageKey = messageKey;
+  }
+}
+
+// Shared fetch wrapper for the boards/tasks endpoints below — every call
+// carries the caller's Firebase ID token (obtained by the component via
+// `user.getIdToken()`, same pattern as fetchCurrentUser above) and parses
+// the standard { error: { code, messageKey, message } } envelope on failure.
+async function request(path, { method = 'GET', idToken, body } = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (res.status === 204) return null;
+
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!res.ok) {
+    const err = (payload && payload.error) || {};
+    throw new ApiRequestError(res.status, err.code || 'UNKNOWN', err.messageKey || 'errors.generic', err.message);
+  }
+  return payload;
+}
+
+// --- Boards (US1-US5) ---
+
+export function listBoards(idToken) {
+  return request('/boards', { idToken });
+}
+
+export function createBoard(idToken, payload) {
+  return request('/boards', { method: 'POST', idToken, body: payload });
+}
+
+export function getBoard(idToken, boardId) {
+  return request(`/boards/${boardId}`, { idToken });
+}
+
+export function updateBoard(idToken, boardId, payload) {
+  return request(`/boards/${boardId}`, { method: 'PATCH', idToken, body: payload });
+}
+
+export function deleteBoard(idToken, boardId) {
+  return request(`/boards/${boardId}`, { method: 'DELETE', idToken });
+}
+
+// --- Tasks (US6-US8) ---
+
+export function listTasks(idToken, boardId) {
+  return request(`/boards/${boardId}/tasks`, { idToken });
+}
+
+export function createTask(idToken, boardId, payload) {
+  return request(`/boards/${boardId}/tasks`, { method: 'POST', idToken, body: payload });
+}
+
+export function updateTask(idToken, taskId, payload) {
+  return request(`/tasks/${taskId}`, { method: 'PATCH', idToken, body: payload });
+}
+
+export function deleteTask(idToken, taskId) {
+  return request(`/tasks/${taskId}`, { method: 'DELETE', idToken });
+}
