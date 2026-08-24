@@ -173,17 +173,21 @@ AC AUTH-001.3 ("email вже зареєстрований через Google") н
 1. Given я на `/`, When я створюю борд з валідною назвою, Then новий борд з'являється у сітці, `owner_id` = мій user id, нульові лічильники.
 2. Given порожня назва, When сабміт, Then локалізована помилка валідації, борд не створюється.
 3. Given борд успішно створений, When відповідь повертається з BE, Then FE одразу оновлює сітку без ручного перезавантаження.
+4. Given опційне поле опису (до 2000 символів), When я вказую опис при створенні борду, Then він зберігається в `boards.description` і показується на картці борду (2-рядковий preview). Given опис довший за 2000 символів, When сабміт, Then локалізована помилка валідації, борд не створюється. *(додано 2026-08-24, фіча "Board/task description у FE", коміт `18fc643` — поле `description` у схемі існувало й раніше, але не мало UI до цієї фічі.)*
 
 ## Локалізація
 - `board.create.cta` — en: "Create board", uk: "Створити дошку"
 - `board.create.titleLabel` — en: "Title", uk: "Назва"
+- `board.create.descriptionLabel` — en: "Description", uk: "Опис"
+- `board.create.descriptionPlaceholder` — en: "What is this board for?", uk: "Для чого ця дошка?"
 - `board.create.accentLabel` — en: "Accent color", uk: "Колір акценту"
 - `board.create.saving` — en: "Creating…", uk: "Створення…"
 - `board.create.validation.titleRequired` — en: "Board title is required", uk: "Вкажіть назву дошки"
 - `board.create.validation.titleTooLong` — en: "Board title must be 100 characters or fewer", uk: "Назва дошки має містити не більше 100 символів"
+- `board.create.validation.descriptionTooLong` — en: "Description must be 2000 characters or fewer", uk: "Опис має містити не більше 2000 символів" *(додано 2026-08-24)*
 
 ## Відповідність scope
-В межах. Створення борду з назвою й акцентним кольором — базовий CRUD-екран, прямо описаний у CLAUDE.md ("Boards overview... Створення/перейменування/видалення борду").
+В межах. Створення борду з назвою й акцентним кольором — базовий CRUD-екран, прямо описаний у CLAUDE.md ("Boards overview... Створення/перейменування/видалення борду"). Опис — колонка `boards.description` з розділу "Дані" CLAUDE.md, лише не мала UI до 2026-08-24.
 ```
 
 ### US-003 — Перейменування борду
@@ -195,15 +199,17 @@ AC AUTH-001.3 ("email вже зареєстрований через Google") н
 ## Acceptance Criteria
 1. Given я власник борду, When редагую й зберігаю назву, Then назва оновлюється без зміни id/статусів тасок.
 2. Given я не власник борду, When намагаюсь редагувати напряму через API, Then отримую 403 з локалізованим ключем помилки.
+3. Given я власник борду, When редагую й зберігаю опис (до 2000 символів, опційно), Then `boards.description` оновлюється, картка й заголовок Board view показують нове значення. Given опис довший за 2000 символів, When сабміт, Then локалізована помилка валідації, зміни не зберігаються. *(додано 2026-08-24, фіча "Board/task description у FE", коміт `18fc643`.)*
 
 ## Локалізація
 - `board.card.rename` — en: "Rename", uk: "Перейменувати"
 - `board.rename.validation.titleRequired` — en: "Board title is required", uk: "Вкажіть назву дошки"
 - `board.rename.validation.titleTooLong` — en: "Board title must be 100 characters or fewer", uk: "Назва дошки має містити не більше 100 символів"
+- `board.rename.validation.descriptionTooLong` — en: "Description must be 2000 characters or fewer", uk: "Опис має містити не більше 2000 символів" *(додано 2026-08-24)*
 - `errors.board.ownerOnly` — en: "Only the board owner can do this.", uk: "Це може зробити лише власник дошки."
 
 ## Відповідність scope
-В межах. Перейменування — частина базового CRUD борду з CLAUDE.md; авторизаційна перевірка (owner-only) відповідає вимозі "перевірка ролі... відбувається в сервісному шарі BE перед кожним запитом до БД".
+В межах. Перейменування — частина базового CRUD борду з CLAUDE.md; авторизаційна перевірка (owner-only) відповідає вимозі "перевірка ролі... відбувається в сервісному шарі BE перед кожним запитом до БД". Редагування опису — той самий inline-form UX, розширений на колонку `boards.description`.
 ```
 
 ### US-004 — Видалення борду
@@ -261,16 +267,21 @@ AC AUTH-001.3 ("email вже зареєстрований через Google") н
 ## Acceptance Criteria
 1. Given валідна назва, When створюю таску, Then вона з'являється в колонці "Planned" (`status=planned`), `position` — в кінці колонки, `created_by` = я.
 2. Given порожня назва, When сабміт, Then локалізована помилка, таска не створюється.
+3. Given опційне поле опису (до 2000 символів), When я вказую опис при створенні таски, Then він зберігається в `tasks.notes` і показується в секції опису `TaskPanel`. Given опис довший за 2000 символів, When сабміт, Then локалізована помилка валідації, таска не створюється. *(додано 2026-08-24, фіча "Board/task description у FE", коміт `18fc643` — реюзає вже наявну колонку `tasks.notes`, релейблену "Description" в UI, не нова колонка.)*
 
 ## Локалізація
 - `task.create.cta` — en: "Add task", uk: "Додати таску"
 - `task.create.titlePlaceholder` — en: "Task title", uk: "Назва таски"
+- `task.create.descriptionLabel` — en: "Description", uk: "Опис"
+- `task.create.descriptionPlaceholder` — en: "Add a description (optional)", uk: "Додайте опис (необов'язково)"
 - `task.create.saving` — en: "Adding…", uk: "Додавання…"
 - `task.create.validation.titleRequired` — en: "Task title is required", uk: "Вкажіть назву таски"
 - `task.create.validation.titleTooLong` — en: "Task title must be 200 characters or fewer", uk: "Назва таски має містити не більше 200 символів"
+- `task.create.validation.descriptionTooLong` — en: "Description must be 2000 characters or fewer", uk: "Опис має містити не більше 2000 символів" *(додано 2026-08-24)*
+- `task.notes.label` / `.placeholder` / `.empty` / `.edit` / `.add` — секція опису в `TaskPanel` (перегляд/редагування, дзеркалить UX title-rename) *(додано 2026-08-24)*
 
 ## Відповідність scope
-В межах. Створення таски в колонці Planned — базовий CRUD, прямо описаний у розділі "Екрани" CLAUDE.md ("додавання/видалення тасок").
+В межах. Створення таски в колонці Planned — базовий CRUD, прямо описаний у розділі "Екрани" CLAUDE.md ("додавання/видалення тасок"). Опис — колонка `tasks.notes` з розділу "Дані" CLAUDE.md, лише не мала UI до 2026-08-24.
 ```
 
 ### US-007 — Видалення картки навчання
