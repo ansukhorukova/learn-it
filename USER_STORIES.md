@@ -34,10 +34,10 @@
 | US-018 | Bug fix: розгортання повного тексту вкладення-нотатки | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Attachments |
 | US-019 | Коментарі до таски | ✅ Готово (пройшло code review) | 2026-08-25 | FE_TaskPanel, BE_TaskComments, DB_TaskComments |
 | US-020 | Оцінений (запланований) час на тасці | ✅ Готово (пройшло code review) | 2026-08-25 | FE_TaskPanel, FE_BoardView, BE_Tasks, DB_Tasks |
-| US-021 | Категорія борду (з довідника competencies) | 🔧 У розробці | 2026-08-25 | FE_Boards, BE_Boards, BE_Competencies, DB_Boards |
-| US-022 | Публічна видимість борду (read-only без запрошення) | 🔧 У розробці | 2026-08-25 | FE_Boards, FE_BoardView, BE_Boards, BE_Tasks, BE_Attachments, BE_TaskComments, DB_Boards |
-| US-023 | Мови борду (мультиселект, довідник languages) | 🔧 У розробці | 2026-08-25 | FE_Boards, BE_Boards, BE_Languages, DB_Languages, DB_BoardLanguages |
-| US-024 | Boards overview: секції "Мої дошки"/"Public Boards" + фільтри | 🔧 У розробці | 2026-08-25 | FE_Boards, BE_Boards |
+| US-021 | Категорія борду (з довідника competencies) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, BE_Boards, BE_Competencies, DB_Boards |
+| US-022 | Публічна видимість борду (read-only без запрошення) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, FE_BoardView, BE_Boards, BE_Tasks, BE_Attachments, BE_TaskComments, DB_Boards |
+| US-023 | Мови борду (мультиселект, довідник languages) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, BE_Boards, BE_Languages, DB_Languages, DB_BoardLanguages |
+| US-024 | Boards overview: секції "Мої дошки"/"Public Boards" + фільтри | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, BE_Boards |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---

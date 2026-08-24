@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-25 — коментарі до таски (US-019, нові вузли `BE_TaskComments`/`DB_TaskComments`) та оцінений час (US-020, розширення `BE_Tasks`/`DB_Tasks`); фікс розгортання нотатки (US-018, усередині вже done `FE_Attachments`).
+Останнє оновлення: 2026-08-25 — категорія/публічна видимість/мови борду + реструктуризація Boards overview (US-021…US-024, нові вузли `BE_Languages`/`DB_Languages`/`DB_BoardLanguages`, розширення `FE_Boards`/`FE_BoardView`/`BE_Boards`/`DB_Boards`).
 
 ## Легенда
 
@@ -78,27 +78,33 @@ graph TD
   classDef planned fill:#37474f,color:#cfd8dc,stroke:#263238,stroke-width:1px,stroke-dasharray: 3 3;
 
   subgraph FE["Frontend"]
-    FE_Boards["🟩 FE_Boards<br/>Boards overview:<br/>сітка, create/rename/delete"]
+    FE_Boards["🟩 FE_Boards<br/>Boards overview: сітка<br/>Мої дошки, create/rename/delete,<br/>Public Boards + фільтри<br/>категорія/мова"]
     FE_Shared["⬜ FE_Shared<br/>Shared with me"]
-    FE_BoardView["🟩 FE_BoardView<br/>Board view: 3 колонки,<br/>drag-and-drop + a11y select"]
+    FE_BoardView["🟩 FE_BoardView<br/>Board view: 3 колонки,<br/>drag-and-drop + a11y select,<br/>бейджі категорії/мов,<br/>public-viewer банер"]
     FE_SharePanel["🟩 FE_SharePanel<br/>керування доступом:<br/>форма+список учасників,<br/>myRole-gating"]
   end
 
   subgraph BE["Backend (Node.js REST /api/v1)"]
-    BE_Boards["🟩 BE_Boards<br/>/boards CRUD<br/>+ myRole"]
+    BE_Boards["🟩 BE_Boards<br/>/boards CRUD + myRole<br/>+ GET /boards/public<br/>+ category/visibility/languages"]
     BE_BoardMembers["🟩 BE_BoardMembers<br/>/boards/:id/members CRUD"]
     BE_Tasks["🟩 BE_Tasks<br/>/boards/:id/tasks CRUD<br/>+ статус/позиція + myRole"]
+    BE_Languages["🟩 BE_Languages<br/>GET /languages"]
   end
 
   subgraph DB["PostgreSQL"]
-    DB_Boards["🟩 DB_Boards<br/>boards"]
+    DB_Boards["🟩 DB_Boards<br/>boards (+ category_id,<br/>+ visibility)"]
     DB_BoardMembers["🟩 DB_BoardMembers<br/>board_members"]
     DB_Tasks["🟩 DB_Tasks<br/>tasks"]
+    DB_Languages["🟩 DB_Languages<br/>languages (довідник)"]
+    DB_BoardLanguages["🟩 DB_BoardLanguages<br/>board_languages"]
   end
 
   FE_Boards --> FE_Shared
   FE_Boards --> BE_Boards
+  FE_Boards --> BE_Languages
   BE_Boards --> DB_Boards
+  BE_Boards --> DB_BoardLanguages
+  BE_Languages --> DB_Languages
   FE_BoardView --> FE_SharePanel
   FE_SharePanel --> BE_BoardMembers
   BE_BoardMembers --> DB_BoardMembers
@@ -107,7 +113,7 @@ graph TD
   BE_Tasks --> DB_Tasks
   BE_Tasks --> DB_Boards
 
-  class FE_Boards,FE_BoardView,FE_SharePanel,BE_Boards,BE_BoardMembers,BE_Tasks,DB_Boards,DB_BoardMembers,DB_Tasks done;
+  class FE_Boards,FE_BoardView,FE_SharePanel,BE_Boards,BE_BoardMembers,BE_Tasks,BE_Languages,DB_Boards,DB_BoardMembers,DB_Tasks,DB_Languages,DB_BoardLanguages done;
   class FE_Shared planned;
 ```
 
@@ -178,15 +184,17 @@ graph TD
   DB_AttachmentViewers["🟩 attachment_viewers<br/>attachment_id, user_id"]
   DB_UserCompetencies["🟩 user_competencies<br/>user_id, competency_id,<br/>is_custom, willing_to_teach"]
   DB_TaskComments["🟩 task_comments<br/>task_id, author_id,<br/>body, created_at"]
+  DB_BoardLanguages["🟩 board_languages<br/>board_id, language_id"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>public_name, locale,<br/>last_sign_in_provider"]
   DB_Attachments["🟩 attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
   DB_TimeEntries["🟩 time_entries<br/>task_id, user_id,<br/>started_at, ended_at"]
   DB_Competencies["🟩 competencies<br/>slug, is_active"]
+  DB_Languages["🟩 languages<br/>slug, is_active"]
 
   DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position,<br/>planned_minutes"]
 
-  DB_Boards["🟩 boards<br/>title, description,<br/>accent, owner_id"]
+  DB_Boards["🟩 boards<br/>title, description,<br/>accent, owner_id,<br/>category_id, visibility"]
 
   DB_BoardMembers -->|FK| DB_Boards
   DB_BoardMembers -->|FK| DB_Users
@@ -200,16 +208,21 @@ graph TD
   DB_UserCompetencies -.FK, nullable.-> DB_Competencies
   DB_TaskComments -->|FK, CASCADE| DB_Tasks
   DB_TaskComments -->|FK| DB_Users
+  DB_BoardLanguages -->|FK| DB_Boards
+  DB_BoardLanguages -->|FK| DB_Languages
   DB_Attachments -->|FK| DB_Tasks
   DB_Tasks -->|FK| DB_Boards
+  DB_Boards -.FK, nullable.-> DB_Competencies
 
-  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments done;
+  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages done;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
 
 - **Orphaned Firebase account при мережевому збої під час signup** (стосується `FE_Auth` / `BE_UsersMe`). Якщо мережа падає між створенням акаунту в Firebase Auth і успішним upsert-запитом до `users`, а користувач перезавантажує сторінку саме в цей момент — акаунт у Firebase лишається без відповідного рядка в `users`, і зараз немає retry/self-heal логіки, яка б це виправила при наступному вході. Виявлено на code review `/auth` (approved with comments), не блокер для мержу. Потребує окремої фічі: або retry upsert при кожному logon, якщо `users` row відсутній, або фонова звірка Firebase Auth ↔ `users`.
 - **Task rename UI (`FE_TaskPanel`) додано в обхід звичайного review pipeline.** На явний запит користувача (маленька, добре зрозуміла UI-правка: дзеркалить уже заапрувлений патерн board-rename з `BoardsPage.jsx`, використовує вже протестований і concurrency-safe BE-ендпоінт `PATCH /tasks/:id` без жодних змін на бекенді) — крок tester/code-reviewer цього разу пропущено. Зміни: `frontend/src/components/TaskPanel.jsx` (inline rename-форма: лейбл назви, save/cancel, client-side валідація) + `frontend/src/pages/BoardViewPage.jsx` (синхронізація заголовка картки таски після rename у панелі); нові локалі `task.rename.cta`, `task.rename.titleLabel`, `task.rename.validation.titleRequired`, `task.rename.validation.titleTooLong` — EN/UK повні. Користувач особисто перевірив наживо (успішний rename, валідація пустого/задовгого заголовка, 403 для не-власника), тестові дані прибрано вручну після переривання сесії агента. Статуси вузлів на карті **не змінені**: title-редагування вже неявно охоплювалось описом done-вузлів `BE_Tasks`/`DB_Tasks` ("CRUD"), а `FE_TaskPanel` лишається `progress` (вузол означає секцію "Час", не rename). Рекомендовано провести code-review pass, коли буде зручно — до того часу ця конкретна зміна має нижчу впевненість верифікації, ніж решта `done`-роботи на карті.
+- **Відсутнє автотест-покриття для `task_shares`-override-публічної-ролі на task-рівні** (стосується `BE_Tasks`/`backend/src/lib/authz.js`, US-022 AC7). Сценарій "публічний відвідувач борду (`myRole='public'`) з реальним `task_shares`-рядком на конкретній тасці бачить справжню роль з `task_shares`, а не `'public'`" — перевірений вручну ad-hoc скриптом при розробці, але не заведений у `backend/test/concurrency/boardCategoryVisibilityLanguages.test.js` чи інший файл suite. Non-blocker зауваження code-reviewer'а (Approve with comments, `994310a`). Логіка (`higherRole` у `authz.js`) написана коректно й задокументована коментарями в коді, потребує лише регресійного тесту.
+- **Дрімаючий N+1 у `attachments.service.js`** для перевірки `selected`-visibility (`isVisibleTo` став `async` у цій фічі, US-022 AC4). Неактивний зараз — усі вкладення досі `private`/`shared` за замовчуванням, `selected`-picker у UI ще не збудований (лишається "(visibility picker: planned)" на `FE_Attachments`, Рядок 3), тож гілка з потенційним N+1 фактично не виконується жодним існуючим шляхом. Non-blocker зауваження code-reviewer'а (Approve with comments, `994310a`) — виправити (батчинг запиту до `attachment_viewers`) до або одночасно з реалізацією visibility-picker'а, щоб проблема не "прокинулась" непоміченою разом з новим UI.
 
 ## Примітки
 
@@ -226,3 +239,4 @@ graph TD
 - З фічі "Час у TaskPanel" (2026-08-24, US10-US12): `FE_TaskPanel` дороблено до 🟩 `done` — секцію "Час" додано (таймер старт/стоп, живий лічильник, банер auto-stop-and-switch при переключенні активної таски, форма ручного запису, список сесій з edit/delete). `BE_TimeEntries` (6 ендпоінтів: `POST start`, `POST stop`, `POST manual`, `PATCH :entryId`, `DELETE :entryId`, `GET list` на `/tasks/:id/time-entries`) і `DB_TimeEntries` (таблиця `time_entries` + міграція `20260824110000_create_time_entries_table.js`, partial unique index `time_entries_one_active_per_user` на `(user_id) WHERE ended_at IS NULL` — гарантує один активний таймер на користувача на рівні БД) також `done`. Тотали часу додані на `GET /boards/:id/tasks` (`totalSeconds` на тасці, `columnTotals`, `boardTotalSeconds`) і на `GET /boards` (`totalSeconds`, `thisWeekSeconds`, заміна заглушки `board.card.totalTimePlaceholder`) — це розширення контракту вже done-вузлів `BE_Boards`/`BE_Tasks`, окремих вузлів не заведено (той самий принцип, що й для попередніх CRUD-розширень). `thisWeekSeconds` рахується від понеділка 00:00 UTC, фіксовано явно, без локального часу користувача. Приватність: `time_entries` завжди фільтруються `WHERE user_id = requester`; PATCH/DELETE чужого чи неіснуючого запису дають однаковий 404 (anti-enumeration, ніколи 403) — перевірено tester'ом прямим SQL-інсертом "чужого" рядка. Один раунд code review (Request changes → Approve): виправлено race-баг у retry-логіці `startTimer` (ліміт 2 спроби не витримував 3+ одночасних гонщиків) — збільшено до `MAX_START_ATTEMPTS=8` з чесним `errors.timeEntry.startConflict` замість оманливого коду помилки; побічно виправлено баг у `scripts/i18n-check.js` (шлях був `frontend/locales/` замість `frontend/src/locales/` — гейт локалізації мовчки нічого не перевіряв), тепер гейт коректно розрізняє відсутні в EN ICU plural-категорії (`few`/`many`) від справжніх пропусків перекладу. Новий тестовий файл `backend/test/concurrency/timeEntries.concurrency.test.js` (4 сценарії: подвійний старт таймера з двох вкладок, PATCH-vs-DELETE, DELETE-vs-DELETE на той самий запис) — разом з попередніми доводить concurrency-покриття до 12 сценаріїв (боарди/таски/вкладення/час).
 - З фічі "Bug fix: розгортання нотатки" (2026-08-25, US-018): виправлення всередині вже done-вузла `FE_Attachments` — статус на карті не змінюється, нового вузла не заведено. Чіп вкладення-нотатки (`attachment.kind=note`) тепер розгортається/згортається інлайн по кліку на контрол "Показати більше"/"Показати менше" (`aria-expanded`, keyboard-підтримка Tab+Enter/Space) замість обрізання тексту без будь-якого способу прочитати його повністю. Presentation-only фікс: `body` нотатки вже повністю зберігався в БД і повертався `GET`-ендпоінтом вкладень з моменту US-009 — обрізання відбувалось лише в рендері FE, тому BE й схема тут узагалі не чіпались, жодного нового мережевого запиту розгортання не робить. Поведінка ідентична для всіх значень `visibility` (`private`/`shared`/`selected`) — фікс не зачіпає гейт видимості вкладень (той самий існуючий контроль доступу з US-009/US-016). Tester: PASS through кодове рев'ю (живий браузерний клік не перевірено — заблоковано sandbox-класифікатором середовища при спробі тестової автентифікації, не баг коду; зафіксовано тут для прозорості, той самий клас обмеження, що й для US-019/US-020 нижче).
 - З фічі "Коментарі до таски (US-019) та оцінений час (US-020)" (2026-08-25, коміт `85ae7e5`): свідома зміна scope, узгоджена до реалізації (той самий прецедент, що AUTH-003/AUTH-004…008/AUTH-008) — пункт "коментарі/обговорення" прибрано з розділу CLAUDE.md "Поза межами цього етапу". Нові `done`-вузли в Рядку 3: `BE_TaskComments` (`GET`+`POST /tasks/:id/comments`, авторизація читання — той самий `can_view_task`, що вже використовується для attachments/time-entries; авторизація запису — owner/collaborator, viewer отримує 403 `errors.task.readOnlyAccess`, реюз ключа з US-016) і `DB_TaskComments` (таблиця `task_comments`: `task_id` FK `ON DELETE CASCADE` на `tasks`, `author_id` FK на `users`, `body`, `created_at`, складений індекс на `(task_id, created_at)` під сортування списку) — обидва зʼєднані `FE_TaskPanel --> BE_TaskComments --> DB_TaskComments`, поруч із гілкою `BE_Attachments`/`DB_Attachments`, за тим самим структурним принципом. Ключове продуктове рішення: коментарі спільні для всіх з доступом до таски/борду (як статус таски), MVP без edit/delete. `planned_minutes` (US-020) — нова колонка `tasks.planned_minutes` (nullable int, скид у NULL при 0/порожніх полях) і розширення `PATCH /tasks/:id` полем `plannedMinutes` — це розширення вже done-вузлів `BE_Tasks`/`DB_Tasks`, за тим самим принципом, що й попередні розширення контракту (тотали, myRole, шеринг, опис): окремого вузла не заведено, лише позначка нової колонки в лейблі `DB_Tasks` на діаграмі схеми БД. `GET /tasks/:id` і `GET /boards/:id/tasks` розширені тим самим полем `plannedMinutes` поруч з уже наявним `totalSeconds` — той самий гейт `errors.task.readOnlyAccess`/`errors.task.forbidden`, що вже діє для інших полів таски. Code review: Approve with comments, два non-blocker зауваження — застаріле локальне state форми при перемиканні таски без remount панелі (пре-існуючий патерн з `FE_TaskPanel`, тепер поширений і на нові поля коментарів/оцінки часу, не новий борг) і непов'язані transitive npm audit вразливості в ланцюжку залежностей `firebase-admin` (поза скоупом цієї фічі). Tester: PASS with notes — усі 24 AC перевірені кодовим рев'ю + повним BE test suite 55/55 (нові файли `backend/test/concurrency/taskComments.test.js` і `plannedMinutes.test.js`) + прямими API auth-перевірками; живий браузерний клік не перевірено — заблоковано sandbox-класифікатором середовища при спробі тестової автентифікації, не баг коду.
+- З фічі "Категорії, публічна видимість і мови борду + реструктуризація Boards overview" (2026-08-25, US-021…US-024, коміт `994310a`): нова, раніше відсутня в CLAUDE.md концепція — публічна (без запрошення) read-only видимість борда, третій рівень доступу поряд з `board_members`/`task_shares`. Реалізовано новою ефективною роллю `public` у `backend/src/lib/authz.js` (`ROLE_RANK.public = 1`, той самий ранг, що `viewer` — тому всі наявні `minRole: 'viewer'`-гейти читання пропускають публічного відвідувача безкоштовно, а всі `minRole: 'collaborator'`-гейти запису відхиляють його безкоштовно, без окремих `public`-гілок на кожному ендпоінті); реальне членство завжди переважає (`higherRole` явно тай-брейкає `public` проти будь-якої реальної ролі, US-022 AC7). Приватність `time_entries` і гейт `visibility` вкладень (`private`/`shared`/`selected`) лишаються повністю чинними й для публічного відвідувача — жодного винятку (US-022 AC4-5). Нові `done`-вузли в Рядку 2: `BE_Languages` (`GET /languages`, той самий контракт, що вже done `BE_Competencies`) і `DB_Languages`/`DB_BoardLanguages` (нова таблиця-довідник + junction, патерн `competencies`/`board_members` — на відміну від `category_id`/`visibility`, які лягли просто новими колонками на вже done `DB_Boards` без нових вузлів). Розширені без зміни статусу: `FE_Boards` (нова секція "Public Boards" з фільтрами категорія+мова, поряд із семантично незміненою "Мої дошки"), `FE_BoardView` (бейджі категорії/мов, банер `sharing.publicViewerBanner` для `myRole==='public'`), `BE_Boards` (`GET /boards/public`, поля `categoryId`/`visibility`/`languageIds` у CRUD). Owner-only гейт на всі три нові поля борда — не нове правило, застосування вже наявного гейту з US-003/US-015 до нових полів. **CLAUDE.md текстом ще НЕ оновлено цим проходом** — формулювання для розділів "Дані"/"Шеринг"/"Екрани" п.2 підготовлені бізнес-аналітиком у `USER_STORIES.md` (перед US-021), але за прямою вказівкою в запиті на цю серію stories сам CLAUDE.md не редагувався (на відміну від прецеденту AUTH-008/US-018…US-020, де CLAUDE.md оновлювався одразу тим самим проходом) — застосування цих правок узгоджується окремим кроком. Code review: Approve with comments, два non-blocker зауваження зафіксовані окремо в розділі "Відомі прогалини" вище (відсутній автотест на `task_shares`-override-`public` на task-рівні; дрімаючий N+1 у `attachments.service.js`). Tester: PASS with notes — 87/87 backend-тестів (новий файл `backend/test/concurrency/boardCategoryVisibilityLanguages.test.js`) + 20 AC звірено вручну через реальні HTTP-запити з Firebase test-users; один мінорний баг ("брудна" форма `languages` у відповіді `POST /boards`) знайдено й виправлено до code review.

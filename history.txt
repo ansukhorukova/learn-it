@@ -479,3 +479,75 @@ PROJECT_MAP.md — історія змін
   Коміт: docs: update PROJECT_MAP.md — коментарі до таски (US-019) та
     оцінений час (US-020), фікс розгортання нотатки (US-018)
     (AUTH-008) позначено done, FE_ProfilePage доведено до done
+
+2026-08-25 — Категорії, публічна видимість і мови борду + реструктуризація
+  Boards overview (US-021…US-024): done
+  Підсумок від fullstack-developer (коміт 994310a) + tester (PASS with
+    notes — 87/87 backend-тестів, новий backend/test/concurrency/
+    boardCategoryVisibilityLanguages.test.js, + 20 AC звірено вручну
+    через реальні HTTP-запити з Firebase test-users; один мінорний баг
+    "брудної" форми languages у POST /boards знайдено й виправлено до
+    рев'ю) + code-reviewer (Approve with comments, два non-blocker
+    зауваження — відсутнє автотест-покриття для task_shares-override-
+    public-role на task-рівні, перевірено лише ad-hoc скриптом; дрімаючий
+    N+1 у attachments.service.js для selected-visibility, неактивний до
+    появи UI-picker'а):
+    - US-021 (категорія борду): boards.category_id (nullable FK →
+      competencies, reuse наявного довідника без нової таблиці);
+      POST/PATCH /boards приймають categoryId; owner-only редагування,
+      той самий гейт, що для назви/опису борда; бейдж категорії на
+      картці/заголовку Board view; фільтр категорії на GET /boards і
+      GET /boards/public.
+    - US-022 (публічна видимість борду): boards.visibility
+      (private|public, default private); новий, раніше відсутній у
+      CLAUDE.md третій рівень доступу — read-only без запрошення для
+      будь-якого автентифікованого користувача. backend/src/lib/authz.js
+      розширено новою ефективною роллю public (ROLE_RANK.public=1, той
+      самий ранг, що viewer — жодних окремих public-гілок на наявних
+      read/write-гейтах не знадобилось), реальне членство завжди
+      переважає (явний тай-брейк у higherRole). Приватність time_entries
+      і visibility-гейт вкладень (private/shared/selected) лишаються
+      чинними без винятків для публічного відвідувача.
+    - US-023 (мови борду): нова таблиця-довідник languages (id, slug,
+      is_active, патерн competencies) + junction board_languages
+      (board_id, language_id, патерн board_members); новий ендпоінт
+      GET /api/v1/languages; POST/PATCH /boards приймають languageIds
+      (full-replace, не diff/append); бейджі мов на картці/Board view;
+      фільтр мови — лише в секції "Public Boards".
+    - US-024 (Boards overview): дві незалежні секції — "Мої дошки"
+      (без зміни семантики GET /boards, лише фільтр категорії додано) і
+      нова "Public Boards" (GET /boards/public, виключає owner_id=я,
+      фільтри категорія+мова, картки з ownerName, без Rename/Delete,
+      клік → звичайний /boards/:id у read-only myRole="public").
+  Додано нові вузли (Рядок 2 — Boards/Board view/шеринг борду):
+    BE_Languages — 🟩 done, GET /languages, той самий контракт, що
+    BE_Competencies; DB_Languages — 🟩 done, таблиця-довідник;
+    DB_BoardLanguages — 🟩 done, junction-таблиця. З'єднання: FE_Boards
+    --> BE_Languages --> DB_Languages, BE_Boards --> DB_BoardLanguages.
+  Не додано нових вузлів для category_id/visibility (US-021/US-022) —
+    обидва лягли новими колонками на вже done DB_Boards, той самий
+    принцип, що попередні розширення контракту (тотали, myRole,
+    шеринг, опис, planned_minutes); на відміну від languages/
+    board_languages, які отримали власні вузли як нова таблиця-довідник
+    із власним ендпоінтом (за аналогією з DB_Competencies/
+    DB_UserCompetencies).
+  Розширено без зміни статусу (лишаються done): FE_Boards (секція
+    Public Boards + фільтри), FE_BoardView (бейджі категорії/мов,
+    public-viewer банер), BE_Boards (GET /boards/public + нові поля).
+  Оновлено схему БД: DB_Boards доповнено category_id/visibility у
+    лейблі; нова DB_BoardLanguages у верхньому ряді junction-таблиць;
+    нова DB_Languages поруч з DB_Competencies; нова FK-стрілка
+    DB_Boards -.FK, nullable.-> DB_Competencies (category_id).
+  Залоговано дві нові "відомі прогалини" (обидва non-blocker зауваження
+    code-reviewer'а, залишені навмисно — не блокери для approve):
+    відсутній автотест на task_shares-override-public на task-рівні;
+    дрімаючий N+1 у attachments.service.js (isVisibleTo), неактивний
+    до появи visibility-picker'а в UI.
+  ВАЖЛИВО: CLAUDE.md текстом ще НЕ оновлено цим проходом (пряма
+    вказівка в запиті на цю серію stories) — формулювання для розділів
+    "Дані"/"Шеринг"/"Екрани" п.2 підготовлені бізнес-аналітиком у
+    USER_STORIES.md, застосування лишається окремим кроком.
+  USER_STORIES.md: US-021…US-024 переведено з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", дата лишена 2026-08-25.
+  Коміт: docs: update PROJECT_MAP.md — категорії, публічна видимість і
+    мови борду + реструктуризація Boards overview (US-021…US-024)
