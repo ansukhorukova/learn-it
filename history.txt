@@ -206,3 +206,50 @@ PROJECT_MAP.md — історія змін
   Коміт: docs: update PROJECT_MAP.md — Час у TaskPanel (таймер, ручні
     записи, сесії/тотали) позначено done після Approve з фіксом
     retry-логіки startTimer
+
+2026-08-24 — Board & Task Sharing (US13-US17: шеринг борду й таски, ролі
+  viewer/collaborator): done
+  Підсумок від fullstack-developer + tester (2 раунди, обидва фінально
+    PASS) + code-reviewer (2 раунди — перший Request changes через
+    reindex-leak, другий Approve, закомічено як 02de849):
+    - BE: нові таблиці board_members, task_shares (+ схема-only
+      attachment_viewers) через Knex-міграції. backend/src/lib/authz.js
+      розширено ефективною роллю owner/collaborator/viewer з пріоритетом
+      board-level над task-level (max(board role, task role),
+      task-level ніколи не поширюється на інші таски того ж борду) і
+      флагом hasBoardAccess. Нові сервіси boardMembers.service.js,
+      taskShares.service.js; оновлені tasks.service.js, boards.service.js,
+      attachments.service.js, timeEntries.service.js. 8 нових CRUD-
+      ендпоінтів на /boards/:id/members і /tasks/:id/shares, новий
+      GET /tasks/:id, myRole доданий у 3 наявних ендпоінти борду/тасок.
+    - FE: новий компонент frontend/src/components/SharePanel.jsx (форма
+      шерингу за email, список учасників, owner-рядок) — перевикористаний
+      і для board_members, і для task_shares. frontend/src/lib/roles.js
+      (canWrite), gating за myRole у BoardViewPage.jsx і TaskPanel.jsx.
+    - Локалізація: повні EN/UK ключі sharing.*, errors.board.*,
+      errors.task.*, errors.share.*.
+    - Рев'ю раунд 1 → Request changes: reindex-leak — стейл myRole/доступ
+      у in-memory кеші після зміни ролі всередині того самого запиту
+      переживав reindex списку, міг віддати застарілий дозвіл. Разом з
+      цим виправлено мертвий locale-ключ у SharePanel і відсутній
+      FK-індекс. Раунд 2 → Approve.
+  Позначено done: BE_BoardMembers, DB_BoardMembers (Рядок 2 + ER-схема),
+    BE_TaskShares, DB_TaskShares, DB_AttachmentViewers (Рядок 3 +
+    ER-схема).
+  Додано новий вузол: FE_SharePanel — в Рядку 2 (FE_BoardView -->
+    FE_SharePanel --> BE_BoardMembers) і в Рядку 3 (FE_TaskPanel -->
+    FE_SharePanel --> BE_TaskShares), той самий компонент повторений у
+    двох діаграмах, за прецедентом Infra_MinIO. Замінив прямі стрілки
+    FE_BoardView --> BE_BoardMembers і FE_TaskPanel --> BE_TaskShares.
+  DB_AttachmentViewers позначений done як таблиця/FK, що пройшли review,
+    але досі без FE-консюмера — visibility picker у вкладеннях не
+    будувався цього разу, FE_Attachments лишається з приміткою
+    "(visibility picker: planned)" без змін.
+  Свідомо лишено planned (не торкнулось цієї фічі): FE_Shared ("Shared
+    with me"), FE_TeamView/BE_TeamView.
+  Нових "відомих прогалин" не залоговано — reindex-leak, мертвий
+    locale-ключ і відсутній FK-індекс закриті до approve, не відкладені.
+  USER_STORIES.md: US-013…US-017 переведені з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", дата 2026-08-24.
+  Коміт: docs: update PROJECT_MAP.md — Board & Task Sharing (US13-US17)
+    позначено done після Approve з фіксом reindex-leak

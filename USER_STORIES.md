@@ -21,11 +21,11 @@
 | US-010 | Таймер: старт/стоп з auto-stop-and-switch | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, DB_TimeEntries |
 | US-011 | Ручне додавання та корекція запису часу | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, DB_TimeEntries |
 | US-012 | Список сесій і тотали (таска → колонка → борд → this week) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, FE_Boards, BE_TimeEntries, BE_Boards, BE_Tasks, DB_TimeEntries |
-| US-013 | Owner ділиться цілим бордом (board_members) | 🔧 У розробці | 2026-08-24 | BE_BoardMembers, DB_BoardMembers |
-| US-014 | Owner ділиться окремою таскою (task_shares) | 🔧 У розробці | 2026-08-24 | BE_TaskShares, DB_TaskShares |
-| US-015 | Collaborator редагує вміст спільного борду | 🔧 У розробці | 2026-08-24 | BE_Tasks, BE_Attachments, BE_BoardMembers |
-| US-016 | Viewer має read-only доступ і приватний трекінг часу | 🔧 У розробці | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, BE_BoardMembers |
-| US-017 | Цілісність даних і edge cases шерингу | 🔧 У розробці | 2026-08-24 | BE_BoardMembers, BE_TaskShares, DB_BoardMembers, DB_TaskShares |
+| US-013 | Owner ділиться цілим бордом (board_members) | ✅ Готово (пройшло code review) | 2026-08-24 | BE_BoardMembers, DB_BoardMembers, FE_SharePanel |
+| US-014 | Owner ділиться окремою таскою (task_shares) | ✅ Готово (пройшло code review) | 2026-08-24 | BE_TaskShares, DB_TaskShares, FE_SharePanel |
+| US-015 | Collaborator редагує вміст спільного борду | ✅ Готово (пройшло code review) | 2026-08-24 | BE_Tasks, BE_Attachments, BE_BoardMembers |
+| US-016 | Viewer має read-only доступ і приватний трекінг часу | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, BE_BoardMembers |
+| US-017 | Цілісність даних і edge cases шерингу | ✅ Готово (пройшло code review) | 2026-08-24 | BE_BoardMembers, BE_TaskShares, DB_BoardMembers, DB_TaskShares |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
@@ -564,5 +564,5 @@ AC AUTH-001.3 ("email вже зареєстрований через Google") н
 В межах — цілісність даних доступу є невід'ємною частиною коректної реалізації US-013/US-014, не окремим розширенням. Concurrency-покриття (`boardMembers.concurrency.test.js`, `taskShares.concurrency.test.js`) — той самий стандарт якості, що вже застосований до attachments/tasks/time-entries.
 
 ## Примітка щодо поточного стану
-US-013…US-017 позначені 🔧 У розробці: станом на internal-перевірку в цій сесії в робочій директорії вже присутні файли реалізації (міграції, сервіси, тест `sharing.test.js`), але вони ще не пройшли tester/code-reviewer у межах цієї розмови — статус зміниться на ✅ лише після Approve, за тим самим процесом, що й US-001…US-012.
+US-013…US-017 позначені ✅ Готово (2026-08-24): пройшли повний цикл fullstack-developer → tester (2 раунди, обидва фінально PASS) → code-reviewer (2 раунди — перший Request changes через reindex-leak, другий Approve, закомічено як `02de849`) → map-keeper. `PROJECT_MAP.md` оновлено відповідно.
 ```
