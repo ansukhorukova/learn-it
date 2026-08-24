@@ -48,6 +48,13 @@ services:
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-service-account.json
       STORAGE_ENDPOINT: http://minio:9000
+      # Container-network hostname above is correct for the backend's own
+      # PutObject/HeadBucket calls, but unresolvable from a browser on the
+      # host machine — signed download URLs (handed to the browser) need the
+      # published-port equivalent instead. See lib/storage.js's comment.
+      # Unused/no-op against a production STORAGE_ENDPOINT that's already
+      # publicly reachable (R2/Firebase Storage).
+      STORAGE_PUBLIC_ENDPOINT: http://localhost:9000
       STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       STORAGE_BUCKET: ${STORAGE_BUCKET:-learning-attachments}

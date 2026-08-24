@@ -17,4 +17,16 @@ function isDeadlock(err) {
   return !!err && err.code === '40P01';
 }
 
-module.exports = { isUniqueViolation, isDeadlock };
+// `23503` is Postgres's SQLSTATE for foreign_key_violation. Surfaces when an
+// INSERT (or UPDATE) references a parent row that no longer exists — e.g.
+// creating an attachment for a task a concurrent deleteTask just removed
+// between the service layer's ownership check and the INSERT. Callers should
+// map this to a clean NotFoundError for the missing parent rather than
+// leaking the raw `pg` error as a 500. `err.constraint` is the FK constraint
+// name pg reports alongside it, same as isUniqueViolation.
+function isForeignKeyViolation(err, constraintName) {
+  if (!err || err.code !== '23503') return false;
+  return constraintName ? err.constraint === constraintName : true;
+}
+
+module.exports = { isUniqueViolation, isDeadlock, isForeignKeyViolation };

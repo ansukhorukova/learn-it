@@ -4,6 +4,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
 import { useHeadMeta } from '../lib/useHeadMeta';
+import { formatDuration } from '../lib/duration';
 import { createBoard, deleteBoard, listBoards, updateBoard } from '../api/client';
 import { BOARD_ACCENTS, DEFAULT_BOARD_ACCENT } from '../constants/boardAccents';
 import AppHeader from '../components/AppHeader';
@@ -250,7 +251,14 @@ function BoardsPage() {
                       <h2 className={styles.cardTitle}>{board.title}</h2>
                     </Link>
                     <p className={styles.cardMeta}>{t('board.card.taskCount', { count: board.taskCount })}</p>
-                    <p className={styles.cardMeta}>{t('board.card.totalTimePlaceholder')}</p>
+                    {board.totalSeconds > 0 ? (
+                      <>
+                        <p className={styles.cardMeta}>{t('board.card.totalTime', { duration: formatDuration(board.totalSeconds, t) })}</p>
+                        <p className={styles.cardMeta}>{t('board.card.thisWeek', { duration: formatDuration(board.thisWeekSeconds, t) })}</p>
+                      </>
+                    ) : (
+                      <p className={styles.cardMeta}>{t('board.card.noTimeYet')}</p>
+                    )}
                     <div className={styles.cardActions}>
                       <button type="button" className={styles.iconButton} onClick={() => startRename(board)}>
                         {t('board.card.rename')}

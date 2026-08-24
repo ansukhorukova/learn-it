@@ -1,0 +1,1036 @@
+import { useEffect, useRef, useState } from 'react';
+
+import {
+  createLinkAttachment,
+  createManualTimeEntry,
+  createNoteAttachment,
+  deleteAttachment,
+  deleteTimeEntry,
+  listAttachments,
+  listTimeEntries,
+  startTimer,
+  stopTimer,
+  updateTask,
+  updateTimeEntry,
+  uploadFileAttachment,
+} from '../api/client';
+import { ALLOWED_FILE_MIME_TYPES, FILE_INPUT_ACCEPT, MAX_FILE_SIZE_BYTES } from '../constants/attachmentLimits';
+import { MINUTES_MAX, MINUTES_MIN, NOTE_MAX_LENGTH as TIME_NOTE_MAX_LENGTH } from '../constants/timeEntryLimits';
+import { formatDuration, formatSessionTimestamp, formatStopwatch } from '../lib/duration';
+import ConfirmDialog from './ConfirmDialog';
+import styles from './TaskPanel.module.css';
+
+const LINK_TITLE_MAX_LENGTH = 200;
+const NOTE_BODY_MAX_LENGTH = 2000;
+const NOTE_PREVIEW_LENGTH = 80;
+// Matches tasks.service.js's TITLE_MAX_LENGTH (backend/src/services/tasks.service.js)
+// and BoardViewPage.jsx's own copy of the same constant for task creation.
+const TITLE_MAX_LENGTH = 200;
+
+const GROUPS = [
+  { kind: 'file', labelKey: 'attachment.group.files' },
+  { kind: 'link', labelKey: 'attachment.group.links' },
+  { kind: 'note', labelKey: 'attachment.group.notes' },
+];
+
+function groupByKind(attachments) {
+  return {
+    file: attachments.filter((a) => a.kind === 'file'),
+    link: attachments.filter((a) => a.kind === 'link'),
+    note: attachments.filter((a) => a.kind === 'note'),
+  };
+}
+
+function truncate(text, max) {
+  if (!text || text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
+}
+
+// One attachment chip. `onDelete` opens the shared ConfirmDialog in the
+// parent (US9 AC: deletion needs confirmation, matching the existing
+// board/task delete pattern).
+function AttachmentChip({ attachment, t, onDelete }) {
+  let content;
+  if (attachment.kind === 'file') {
+    content = attachment.isImage ? (
+      <a href={attachment.downloadUrl} target="_blank" rel="noopener noreferrer" className={styles.chipLink}>
+        <img src={attachment.downloadUrl} alt={attachment.title} className={styles.thumb} />
+        <span className={styles.chipLabel}>{attachment.title}</span>
+      </a>
+    ) : (
+      <a href={attachment.downloadUrl} target="_blank" rel="noopener noreferrer" className={styles.chipLink}>
+        <span className={styles.fileIcon} aria-hidden="true">
+          📄
+        </span>
+        <span className={styles.chipLabel}>{attachment.title}</span>
+      </a>
+    );
+  } else if (attachment.kind === 'link') {
+    content = (
+      <a href={attachment.url} target="_blank" rel="noopener noreferrer" className={styles.chipLink}>
+        <span className={styles.chipLabel}>{attachment.title}</span>
+      </a>
+    );
+  } else {
+    content = (
+      <span className={styles.chipLabel} title={attachment.body}>
+        {truncate(attachment.body, NOTE_PREVIEW_LENGTH)}
+      </span>
+    );
+  }
+
+  return (
+    <li className={styles.chip}>
+      {content}
+      <button
+        type="button"
+        className={styles.chipDelete}
+        onClick={() => onDelete(attachment)}
+        aria-label={t('attachment.delete.cta')}
+      >
+        ×
+      </button>
+    </li>
+  );
+}
+
+// Side panel opened from a task card (US9) — currently the only content is
+// the attachments section (CLAUDE.md's "Task panel" also specifies a time
+// tracker section, out of scope for this pass — see PROJECT_MAP.md's
+// FE_TaskPanel node). `onAttachmentCountChange(taskId, count)` lets the
+// board view keep the task card's attachment-count badge in sync without a
+// full task list re-fetch. `onTitleUpdated(taskId, title)` does the same for
+// a task rename (see below) — mirrors the attachment-count callback's shape
+// rather than passing the whole updated task back, since the title-only
+// PATCH response (tasks.service.js's non-reordering branch) has no
+// attachmentCount and a naive full-object merge would clobber the card's
+// existing badge count back to 0.
+function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onTimeSummaryChange }) {
+  const [attachments, setAttachments] = useState(null); // null = loading
+  const [loadErrorKey, setLoadErrorKey] = useState(null);
+  const [bannerErrorKey, setBannerErrorKey] = useState(null);
+
+  // --- Time tracking (US10-US12) ---
+  // `timeData` shape: { entries: [...completed, newest first], activeEntry }.
+  // Deliberately drops the `totalSeconds` field the GET response also
+  // carries — every total shown by this panel is derived client-side from
+  // `entries`/`activeEntry` instead (see `displayTotalSeconds` below), so
+  // there's exactly one source of truth that stays correct across every
+  // local mutation (start/stop/manual/edit/delete) without needing a
+  // matching totalSeconds recompute at each call site.
+  const [timeData, setTimeData] = useState(null); // null = loading
+  const [timeLoadErrorKey, setTimeLoadErrorKey] = useState(null);
+  const [timeBannerErrorKey, setTimeBannerErrorKey] = useState(null);
+  const [switchNotice, setSwitchNotice] = useState(false);
+
+  const [starting, setStarting] = useState(false);
+  const [stoppingForm, setStoppingForm] = useState(false);
+  const [stopNote, setStopNote] = useState('');
+  const [stopNoteErrorKey, setStopNoteErrorKey] = useState(null);
+  const [stopping, setStopping] = useState(false);
+
+  const [addingManualEntry, setAddingManualEntry] = useState(false);
+  const [manualMinutes, setManualMinutes] = useState('');
+  const [manualNote, setManualNote] = useState('');
+  const [manualErrorKey, setManualErrorKey] = useState(null);
+  const [submittingManual, setSubmittingManual] = useState(false);
+
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [editMinutes, setEditMinutes] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editErrorKey, setEditErrorKey] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState(null);
+  const [deletingEntry, setDeletingEntry] = useState(false);
+
+  // Ticks once a second only while a timer is running on this task, driving
+  // the live HH:MM:SS display (US10 AC1/3: "рахує Date.now()-startedAt
+  // локально, ресинхронізується з сервером при завантаженні панелі" — the
+  // resync is `timeData.activeEntry.startedAt` itself, freshly fetched on
+  // panel open; this tick just re-renders that computation every second).
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!timeData?.activeEntry) return undefined;
+    const interval = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [timeData?.activeEntry?.id]);
+
+  // Task title rename — placed in this panel (rather than on the board-view
+  // TaskCard) because CLAUDE.md frames the panel as the task's "detail view"
+  // and this mirrors that role; the board-rename UI (BoardsPage.jsx) is an
+  // inline edit toggled from the equivalent list-item/card, which is what
+  // this reproduces here (form replaces the static <h2> in place).
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(task.title);
+  const [titleErrorKey, setTitleErrorKey] = useState(null);
+  const [savingTitle, setSavingTitle] = useState(false);
+
+  const [addingLink, setAddingLink] = useState(false);
+  const [linkTitle, setLinkTitle] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkErrorKey, setLinkErrorKey] = useState(null);
+  const [submittingLink, setSubmittingLink] = useState(false);
+
+  const [addingNote, setAddingNote] = useState(false);
+  const [noteBody, setNoteBody] = useState('');
+  const [noteErrorKey, setNoteErrorKey] = useState(null);
+  const [submittingNote, setSubmittingNote] = useState(false);
+
+  const [fileErrorKey, setFileErrorKey] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const panelRef = useRef(null);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key !== 'Escape') return;
+      // Escape cancels an in-progress title edit first (keyboard-accessible
+      // cancel, matching the rest of this app's inline-edit forms), and only
+      // falls through to closing the whole panel once there's no edit to
+      // cancel — otherwise Escape-to-cancel-rename would also dismiss the
+      // panel, which isn't what a user pressing it once would expect.
+      if (editingTitle) {
+        setEditingTitle(false);
+        setTitleErrorKey(null);
+        return;
+      }
+      if (editingEntryId) {
+        cancelEditEntry();
+        return;
+      }
+      if (!deleteTarget && !deleteEntryTarget) onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, deleteTarget, deleteEntryTarget, editingTitle, editingEntryId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAttachments(null);
+    setLoadErrorKey(null);
+    (async () => {
+      try {
+        const data = await listAttachments(idToken, task.id);
+        if (!cancelled) setAttachments(data.attachments);
+      } catch (err) {
+        if (!cancelled) setLoadErrorKey(err.messageKey || 'errors.generic');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id, idToken]);
+
+  useEffect(() => {
+    if (attachments !== null) onAttachmentCountChange?.(task.id, attachments.length);
+  }, [attachments, task.id, onAttachmentCountChange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTimeData(null);
+    setTimeLoadErrorKey(null);
+    (async () => {
+      try {
+        const data = await listTimeEntries(idToken, task.id);
+        if (!cancelled) setTimeData({ entries: data.entries, activeEntry: data.activeEntry });
+      } catch (err) {
+        if (!cancelled) setTimeLoadErrorKey(err.messageKey || 'errors.generic');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id, idToken]);
+
+  // Completed-sessions total + the active entry's live elapsed time, if
+  // running — the single total this panel ever shows (sessions.total) or
+  // reports upward (see the effect below), always derived fresh rather than
+  // trusted as a separately-tracked number that could drift.
+  const liveElapsedSeconds = timeData?.activeEntry
+    ? Math.max(0, Math.floor((nowTick - new Date(timeData.activeEntry.startedAt).getTime()) / 1000))
+    : 0;
+  const displayTotalSeconds = timeData
+    ? timeData.entries.reduce((sum, entry) => sum + (entry.durationSeconds || 0), 0) + liveElapsedSeconds
+    : 0;
+
+  // Keeps the task card's time badge (US12 AC4) in sync with this panel's
+  // own data, same shape/intent as onAttachmentCountChange above — but keyed
+  // off `timeData` (start/stop/manual/edit/delete), not `nowTick`, so the
+  // board view doesn't re-render every second while a timer runs in the
+  // background.
+  useEffect(() => {
+    if (timeData !== null) onTimeSummaryChange?.(task.id, displayTotalSeconds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally excludes displayTotalSeconds/liveElapsedSeconds/nowTick: this should only re-fire when timeData itself changes (a real mutation), not every second-tick recomputation of the live total.
+  }, [timeData, task.id, onTimeSummaryChange]);
+
+  async function handleStartTimer() {
+    setStarting(true);
+    setTimeBannerErrorKey(null);
+    setSwitchNotice(false);
+    try {
+      const result = await startTimer(idToken, task.id);
+      setTimeData((prev) => ({ entries: prev ? prev.entries : [], activeEntry: result.startedEntry }));
+      if (result.autoStoppedEntry) setSwitchNotice(true);
+    } catch (err) {
+      setTimeBannerErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  async function handleStopTimer(event) {
+    event.preventDefault();
+    const trimmedNote = stopNote.trim();
+    if (trimmedNote.length > TIME_NOTE_MAX_LENGTH) {
+      setStopNoteErrorKey('errors.timeEntry.noteTooLong');
+      return;
+    }
+
+    setStopping(true);
+    setStopNoteErrorKey(null);
+    try {
+      const stopped = await stopTimer(idToken, task.id, { note: trimmedNote || undefined });
+      setTimeData((prev) => ({ entries: [stopped, ...(prev ? prev.entries : [])], activeEntry: null }));
+      setStoppingForm(false);
+      setStopNote('');
+    } catch (err) {
+      setTimeBannerErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  function parseMinutesInput(value) {
+    if (value === '' || value === null || value === undefined) return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  async function handleAddManualEntry(event) {
+    event.preventDefault();
+    const minutesNum = parseMinutesInput(manualMinutes);
+    if (minutesNum === null || !Number.isInteger(minutesNum) || minutesNum < MINUTES_MIN) {
+      setManualErrorKey('errors.timeEntry.minutesInvalid');
+      return;
+    }
+    if (minutesNum > MINUTES_MAX) {
+      setManualErrorKey('errors.timeEntry.minutesTooLarge');
+      return;
+    }
+    const trimmedNote = manualNote.trim();
+    if (trimmedNote.length > TIME_NOTE_MAX_LENGTH) {
+      setManualErrorKey('errors.timeEntry.noteTooLong');
+      return;
+    }
+
+    setSubmittingManual(true);
+    setManualErrorKey(null);
+    try {
+      const entry = await createManualTimeEntry(idToken, task.id, { minutes: minutesNum, note: trimmedNote || undefined });
+      setTimeData((prev) => ({ entries: [entry, ...(prev ? prev.entries : [])], activeEntry: prev ? prev.activeEntry : null }));
+      setManualMinutes('');
+      setManualNote('');
+      setAddingManualEntry(false);
+    } catch (err) {
+      setManualErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSubmittingManual(false);
+    }
+  }
+
+  function startEditEntry(entry) {
+    setEditingEntryId(entry.id);
+    setEditMinutes(String(Math.max(1, Math.round((entry.durationSeconds || 0) / 60))));
+    setEditNote(entry.note || '');
+    setEditErrorKey(null);
+  }
+
+  function cancelEditEntry() {
+    setEditingEntryId(null);
+    setEditErrorKey(null);
+  }
+
+  async function handleSubmitEdit(event, entryId) {
+    event.preventDefault();
+    const minutesNum = parseMinutesInput(editMinutes);
+    if (minutesNum === null || !Number.isInteger(minutesNum) || minutesNum < MINUTES_MIN) {
+      setEditErrorKey('errors.timeEntry.minutesInvalid');
+      return;
+    }
+    if (minutesNum > MINUTES_MAX) {
+      setEditErrorKey('errors.timeEntry.minutesTooLarge');
+      return;
+    }
+    const trimmedNote = editNote.trim();
+    if (trimmedNote.length > TIME_NOTE_MAX_LENGTH) {
+      setEditErrorKey('errors.timeEntry.noteTooLong');
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditErrorKey(null);
+    try {
+      const updated = await updateTimeEntry(idToken, task.id, entryId, { minutes: minutesNum, note: trimmedNote || null });
+      setTimeData((prev) => ({
+        ...prev,
+        entries: prev.entries.map((entry) => (entry.id === entryId ? updated : entry)),
+      }));
+      setEditingEntryId(null);
+    } catch (err) {
+      setEditErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function confirmDeleteEntry() {
+    if (!deleteEntryTarget) return;
+    setDeletingEntry(true);
+    try {
+      await deleteTimeEntry(idToken, task.id, deleteEntryTarget.id);
+      setTimeData((prev) => {
+        if (!prev) return prev;
+        const wasActive = prev.activeEntry?.id === deleteEntryTarget.id;
+        return {
+          activeEntry: wasActive ? null : prev.activeEntry,
+          entries: prev.entries.filter((entry) => entry.id !== deleteEntryTarget.id),
+        };
+      });
+      setDeleteEntryTarget(null);
+    } catch (err) {
+      setTimeBannerErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setDeletingEntry(false);
+    }
+  }
+
+  function startEditingTitle() {
+    setTitleValue(task.title);
+    setTitleErrorKey(null);
+    setEditingTitle(true);
+  }
+
+  // Client-side validation mirrors board rename (BoardsPage.jsx's
+  // submitRename): trim, required, then max-length, using the FE's own
+  // pre-submit validation.* keys — a failed BE round-trip (403/404/network/a
+  // race that changed the title server-side first) falls through to
+  // `err.messageKey`, which resolves to the server's own errors.task.* key
+  // (e.g. errors.task.forbidden for a non-owner) via the same generic
+  // ApiRequestError.messageKey pattern used by every other mutation here.
+  async function handleTitleSubmit(event) {
+    event.preventDefault();
+    const trimmed = titleValue.trim();
+    if (!trimmed) {
+      setTitleErrorKey('task.rename.validation.titleRequired');
+      return;
+    }
+    if (trimmed.length > TITLE_MAX_LENGTH) {
+      setTitleErrorKey('task.rename.validation.titleTooLong');
+      return;
+    }
+
+    setSavingTitle(true);
+    setTitleErrorKey(null);
+    try {
+      const updated = await updateTask(idToken, task.id, { title: trimmed });
+      onTitleUpdated?.(task.id, updated.title);
+      setEditingTitle(false);
+    } catch (err) {
+      setTitleErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSavingTitle(false);
+    }
+  }
+
+  async function handleAddLink(event) {
+    event.preventDefault();
+    const trimmedTitle = linkTitle.trim();
+    const trimmedUrl = linkUrl.trim();
+    if (!trimmedTitle) {
+      setLinkErrorKey('errors.attachment.titleRequired');
+      return;
+    }
+    if (trimmedTitle.length > LINK_TITLE_MAX_LENGTH) {
+      setLinkErrorKey('errors.attachment.titleTooLong');
+      return;
+    }
+    if (!trimmedUrl) {
+      setLinkErrorKey('errors.attachment.urlRequired');
+      return;
+    }
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(trimmedUrl);
+    } catch {
+      setLinkErrorKey('errors.attachment.urlInvalid');
+      return;
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      setLinkErrorKey('errors.attachment.urlInvalid');
+      return;
+    }
+
+    setSubmittingLink(true);
+    setLinkErrorKey(null);
+    try {
+      const attachment = await createLinkAttachment(idToken, task.id, { title: trimmedTitle, url: trimmedUrl });
+      setAttachments((prev) => [...(prev || []), attachment]);
+      setLinkTitle('');
+      setLinkUrl('');
+      setAddingLink(false);
+    } catch (err) {
+      setLinkErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSubmittingLink(false);
+    }
+  }
+
+  async function handleAddNote(event) {
+    event.preventDefault();
+    const trimmed = noteBody.trim();
+    if (!trimmed) {
+      setNoteErrorKey('errors.attachment.noteBodyRequired');
+      return;
+    }
+    if (trimmed.length > NOTE_BODY_MAX_LENGTH) {
+      setNoteErrorKey('errors.attachment.noteBodyTooLong');
+      return;
+    }
+
+    setSubmittingNote(true);
+    setNoteErrorKey(null);
+    try {
+      const attachment = await createNoteAttachment(idToken, task.id, { body: trimmed });
+      setAttachments((prev) => [...(prev || []), attachment]);
+      setNoteBody('');
+      setAddingNote(false);
+    } catch (err) {
+      setNoteErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSubmittingNote(false);
+    }
+  }
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+
+    setFileErrorKey(null);
+    if (!ALLOWED_FILE_MIME_TYPES.includes(file.type)) {
+      setFileErrorKey('errors.attachment.invalidFileType');
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setFileErrorKey('errors.attachment.fileTooLarge');
+      return;
+    }
+
+    setUploadingFile(true);
+    try {
+      const attachment = await uploadFileAttachment(idToken, task.id, file);
+      setAttachments((prev) => [...(prev || []), attachment]);
+    } catch (err) {
+      setFileErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setUploadingFile(false);
+    }
+  }
+
+  async function confirmDeleteAttachment() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteAttachment(idToken, task.id, deleteTarget.id);
+      setAttachments((prev) => (prev || []).filter((a) => a.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err) {
+      setBannerErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const grouped = attachments ? groupByKind(attachments) : { file: [], link: [], note: [] };
+
+  return (
+    <div className={styles.overlay} role="presentation" onClick={onClose}>
+      <aside
+        ref={panelRef}
+        className={styles.panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-panel-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className={styles.header}>
+          {/* Always-present, always in sync with `task.title` — keeps
+              aria-labelledby valid whether or not the rename form (which has
+              no matching id) is currently rendered in its place below. */}
+          <span id="task-panel-title" className={styles.srOnly}>
+            {task.title}
+          </span>
+
+          {editingTitle ? (
+            <form className={styles.titleForm} onSubmit={handleTitleSubmit} noValidate>
+              <label className={styles.srOnly} htmlFor="task-panel-title-input">
+                {t('task.rename.titleLabel')}
+              </label>
+              <input
+                id="task-panel-title-input"
+                className={styles.input}
+                value={titleValue}
+                maxLength={TITLE_MAX_LENGTH}
+                onChange={(event) => setTitleValue(event.target.value)}
+                aria-invalid={Boolean(titleErrorKey)}
+                autoFocus
+              />
+              {titleErrorKey && <span className={styles.fieldError}>{t(titleErrorKey)}</span>}
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.submit} disabled={savingTitle}>
+                  {t('common.save')}
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancel}
+                  onClick={() => {
+                    setEditingTitle(false);
+                    setTitleErrorKey(null);
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className={styles.titleRow}>
+              <h2 className={styles.title}>{task.title}</h2>
+              <button type="button" className={styles.renameButton} onClick={startEditingTitle}>
+                {t('task.rename.cta')}
+              </button>
+            </div>
+          )}
+
+          <button type="button" className={styles.closeButton} onClick={onClose} aria-label={t('attachment.panel.close')}>
+            ×
+          </button>
+        </div>
+
+        <h3 className={styles.subheading}>{t('timeEntry.section.title')}</h3>
+
+        {timeBannerErrorKey && (
+          <p className={styles.banner} role="alert">
+            {t(timeBannerErrorKey)}
+          </p>
+        )}
+        {switchNotice && (
+          <p className={styles.switchNotice} role="status">
+            {t('timeEntry.timer.switchedNotice')}
+          </p>
+        )}
+
+        {timeData === null && !timeLoadErrorKey && <p className={styles.hint}>{t('attachment.panel.loading')}</p>}
+        {timeLoadErrorKey && (
+          <p className={styles.banner} role="alert">
+            {t(timeLoadErrorKey)}
+          </p>
+        )}
+
+        {timeData !== null && (
+          <>
+            <div className={styles.timerCard} data-active={timeData.activeEntry ? 'true' : undefined}>
+              <div className={styles.timerInfo}>
+                {timeData.activeEntry ? (
+                  <span className={styles.timerClock}>
+                    {t('timeEntry.timer.running', { duration: formatStopwatch(liveElapsedSeconds) })}
+                  </span>
+                ) : (
+                  <span className={styles.hint}>{t('timeEntry.sessions.total', { duration: formatDuration(displayTotalSeconds, t) })}</span>
+                )}
+              </div>
+              <div className={styles.timerActions}>
+                {timeData.activeEntry ? (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.timerButtonActive}
+                      onClick={() => setStoppingForm((v) => !v)}
+                      disabled={stopping}
+                    >
+                      {t('timeEntry.timer.stop')}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.chipDelete}
+                      onClick={() => setDeleteEntryTarget(timeData.activeEntry)}
+                      aria-label={t('timeEntry.delete.cta')}
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className={styles.timerButton} onClick={handleStartTimer} disabled={starting}>
+                    {t('timeEntry.timer.start')}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {stoppingForm && timeData.activeEntry && (
+              <form className={styles.form} onSubmit={handleStopTimer} noValidate>
+                <label className={styles.label} htmlFor="stop-timer-note">
+                  {t('timeEntry.timer.stopNoteLabel')}
+                </label>
+                <textarea
+                  id="stop-timer-note"
+                  className={styles.textarea}
+                  value={stopNote}
+                  maxLength={TIME_NOTE_MAX_LENGTH}
+                  onChange={(event) => setStopNote(event.target.value)}
+                  autoFocus
+                />
+                {stopNoteErrorKey && <span className={styles.fieldError}>{t(stopNoteErrorKey)}</span>}
+                <div className={styles.formActions}>
+                  <button type="submit" className={styles.submit} disabled={stopping}>
+                    {t('timeEntry.timer.stop')}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.cancel}
+                    onClick={() => {
+                      setStoppingForm(false);
+                      setStopNote('');
+                      setStopNoteErrorKey(null);
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className={styles.sessionsBlock}>
+              <h4 className={styles.groupTitle}>{t('timeEntry.sessions.title')}</h4>
+              {timeData.entries.length === 0 && <p className={styles.hint}>{t('timeEntry.sessions.empty')}</p>}
+              {timeData.entries.length > 0 && (
+                <ul className={styles.sessionList}>
+                  {timeData.entries.map((entry) =>
+                    editingEntryId === entry.id ? (
+                      <li key={entry.id} className={styles.sessionRow}>
+                        <form className={styles.form} onSubmit={(event) => handleSubmitEdit(event, entry.id)} noValidate>
+                          <label className={styles.label} htmlFor={`edit-entry-minutes-${entry.id}`}>
+                            {t('timeEntry.manual.minutesLabel')}
+                          </label>
+                          <input
+                            id={`edit-entry-minutes-${entry.id}`}
+                            type="number"
+                            inputMode="numeric"
+                            min={MINUTES_MIN}
+                            max={MINUTES_MAX}
+                            step={1}
+                            className={styles.input}
+                            value={editMinutes}
+                            onChange={(event) => setEditMinutes(event.target.value)}
+                            autoFocus
+                          />
+                          <label className={styles.srOnly} htmlFor={`edit-entry-note-${entry.id}`}>
+                            {t('timeEntry.manual.notePlaceholder')}
+                          </label>
+                          <textarea
+                            id={`edit-entry-note-${entry.id}`}
+                            className={styles.textarea}
+                            value={editNote}
+                            maxLength={TIME_NOTE_MAX_LENGTH}
+                            placeholder={t('timeEntry.manual.notePlaceholder')}
+                            onChange={(event) => setEditNote(event.target.value)}
+                          />
+                          {editErrorKey && <span className={styles.fieldError}>{t(editErrorKey)}</span>}
+                          <div className={styles.formActions}>
+                            <button type="submit" className={styles.submit} disabled={savingEdit}>
+                              {t('timeEntry.edit.submit')}
+                            </button>
+                            <button type="button" className={styles.cancel} onClick={cancelEditEntry}>
+                              {t('common.cancel')}
+                            </button>
+                          </div>
+                        </form>
+                      </li>
+                    ) : (
+                      <li key={entry.id} className={styles.sessionRow}>
+                        <div className={styles.sessionInfo}>
+                          <span className={styles.sessionDuration}>{formatDuration(entry.durationSeconds, t)}</span>
+                          <span className={styles.sessionMeta}>{formatSessionTimestamp(entry.startedAt, locale)}</span>
+                          {entry.note && <span className={styles.sessionNote}>{entry.note}</span>}
+                        </div>
+                        <div className={styles.sessionActions}>
+                          <button type="button" className={styles.renameButton} onClick={() => startEditEntry(entry)}>
+                            {t('timeEntry.edit.cta')}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.chipDelete}
+                            onClick={() => setDeleteEntryTarget(entry)}
+                            aria-label={t('timeEntry.delete.cta')}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+
+              <button type="button" className={styles.addButton} onClick={() => setAddingManualEntry((v) => !v)}>
+                {t('timeEntry.manual.cta')}
+              </button>
+
+              {addingManualEntry && (
+                <form className={styles.form} onSubmit={handleAddManualEntry} noValidate>
+                  <label className={styles.label} htmlFor="manual-entry-minutes">
+                    {t('timeEntry.manual.minutesLabel')}
+                  </label>
+                  <input
+                    id="manual-entry-minutes"
+                    type="number"
+                    inputMode="numeric"
+                    min={MINUTES_MIN}
+                    max={MINUTES_MAX}
+                    step={1}
+                    className={styles.input}
+                    value={manualMinutes}
+                    onChange={(event) => setManualMinutes(event.target.value)}
+                    autoFocus
+                  />
+                  <label className={styles.srOnly} htmlFor="manual-entry-note">
+                    {t('timeEntry.manual.notePlaceholder')}
+                  </label>
+                  <textarea
+                    id="manual-entry-note"
+                    className={styles.textarea}
+                    value={manualNote}
+                    maxLength={TIME_NOTE_MAX_LENGTH}
+                    placeholder={t('timeEntry.manual.notePlaceholder')}
+                    onChange={(event) => setManualNote(event.target.value)}
+                  />
+                  {manualErrorKey && <span className={styles.fieldError}>{t(manualErrorKey)}</span>}
+                  <div className={styles.formActions}>
+                    <button type="submit" className={styles.submit} disabled={submittingManual}>
+                      {submittingManual ? t('timeEntry.manual.saving') : t('timeEntry.manual.submit')}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.cancel}
+                      onClick={() => {
+                        setAddingManualEntry(false);
+                        setManualMinutes('');
+                        setManualNote('');
+                        setManualErrorKey(null);
+                      }}
+                    >
+                      {t('common.cancel')}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </>
+        )}
+
+        <h3 className={styles.subheading}>{t('attachment.panel.title')}</h3>
+
+        {bannerErrorKey && (
+          <p className={styles.banner} role="alert">
+            {t(bannerErrorKey)}
+          </p>
+        )}
+
+        {attachments === null && !loadErrorKey && <p className={styles.hint}>{t('attachment.panel.loading')}</p>}
+        {loadErrorKey && (
+          <p className={styles.banner} role="alert">
+            {t(loadErrorKey)}
+          </p>
+        )}
+
+        {attachments !== null && (
+          <div className={styles.groups}>
+            {attachments.length === 0 && <p className={styles.hint}>{t('attachment.panel.empty')}</p>}
+            {GROUPS.map(
+              (group) =>
+                grouped[group.kind].length > 0 && (
+                  <div key={group.kind} className={styles.group}>
+                    <h4 className={styles.groupTitle}>
+                      {t(group.labelKey)} ({grouped[group.kind].length})
+                    </h4>
+                    <ul className={styles.chipList}>
+                      {grouped[group.kind].map((attachment) => (
+                        <AttachmentChip
+                          key={attachment.id}
+                          attachment={attachment}
+                          t={t}
+                          onDelete={setDeleteTarget}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                ),
+            )}
+          </div>
+        )}
+
+        <div className={styles.addSection}>
+          <div className={styles.addRow}>
+            <button
+              type="button"
+              className={styles.addButton}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingFile}
+            >
+              {uploadingFile ? t('attachment.file.uploading') : t('attachment.add.file')}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={FILE_INPUT_ACCEPT}
+              className={styles.srOnly}
+              onChange={handleFileChange}
+            />
+            <button
+              type="button"
+              className={styles.addButton}
+              onClick={() => {
+                setAddingLink((v) => !v);
+                setAddingNote(false);
+              }}
+            >
+              {t('attachment.add.link')}
+            </button>
+            <button
+              type="button"
+              className={styles.addButton}
+              onClick={() => {
+                setAddingNote((v) => !v);
+                setAddingLink(false);
+              }}
+            >
+              {t('attachment.add.note')}
+            </button>
+          </div>
+          <p className={styles.hint}>{t('attachment.file.hint')}</p>
+          {fileErrorKey && <span className={styles.fieldError}>{t(fileErrorKey)}</span>}
+
+          {addingLink && (
+            <form className={styles.form} onSubmit={handleAddLink} noValidate>
+              <label className={styles.label} htmlFor="attachment-link-title">
+                {t('attachment.link.titleLabel')}
+              </label>
+              <input
+                id="attachment-link-title"
+                className={styles.input}
+                value={linkTitle}
+                maxLength={LINK_TITLE_MAX_LENGTH}
+                placeholder={t('attachment.link.titlePlaceholder')}
+                onChange={(event) => setLinkTitle(event.target.value)}
+                autoFocus
+              />
+              <label className={styles.label} htmlFor="attachment-link-url">
+                {t('attachment.link.urlLabel')}
+              </label>
+              <input
+                id="attachment-link-url"
+                type="url"
+                className={styles.input}
+                value={linkUrl}
+                placeholder={t('attachment.link.urlPlaceholder')}
+                onChange={(event) => setLinkUrl(event.target.value)}
+              />
+              {linkErrorKey && <span className={styles.fieldError}>{t(linkErrorKey)}</span>}
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.submit} disabled={submittingLink}>
+                  {submittingLink ? t('attachment.link.saving') : t('attachment.link.submit')}
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancel}
+                  onClick={() => {
+                    setAddingLink(false);
+                    setLinkTitle('');
+                    setLinkUrl('');
+                    setLinkErrorKey(null);
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {addingNote && (
+            <form className={styles.form} onSubmit={handleAddNote} noValidate>
+              <label className={styles.label} htmlFor="attachment-note-body">
+                {t('attachment.note.bodyLabel')}
+              </label>
+              <textarea
+                id="attachment-note-body"
+                className={styles.textarea}
+                value={noteBody}
+                maxLength={NOTE_BODY_MAX_LENGTH}
+                placeholder={t('attachment.note.bodyPlaceholder')}
+                onChange={(event) => setNoteBody(event.target.value)}
+                autoFocus
+              />
+              {noteErrorKey && <span className={styles.fieldError}>{t(noteErrorKey)}</span>}
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.submit} disabled={submittingNote}>
+                  {submittingNote ? t('attachment.note.saving') : t('attachment.note.submit')}
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancel}
+                  onClick={() => {
+                    setAddingNote(false);
+                    setNoteBody('');
+                    setNoteErrorKey(null);
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </aside>
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title={t('attachment.delete.confirmTitle')}
+          message={t('attachment.delete.confirmMessage')}
+          confirmLabel={t('attachment.delete.confirmButton')}
+          cancelLabel={t('common.cancel')}
+          busy={deleting}
+          onConfirm={confirmDeleteAttachment}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {deleteEntryTarget && (
+        <ConfirmDialog
+          title={t('timeEntry.delete.confirmTitle')}
+          message={t('timeEntry.delete.confirmMessage')}
+          confirmLabel={t('timeEntry.delete.confirmButton')}
+          cancelLabel={t('common.cancel')}
+          busy={deletingEntry}
+          onConfirm={confirmDeleteEntry}
+          onCancel={() => setDeleteEntryTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+export default TaskPanel;

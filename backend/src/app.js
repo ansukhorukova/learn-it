@@ -37,12 +37,13 @@ app.use('/api/v1/auth', authRouter);
 
 // Boards + tasks (Phase 1 of "boards + tasks" — see CLAUDE.md "API" and
 // "Дані"). requireAuth is applied per-route inside each router, same pattern
-// as usersRouter above.
+// as usersRouter above. tasksRouter also mounts /tasks/:id/attachments
+// (US9) and /tasks/:id/time-entries (US10-US12) — both nested here rather
+// than separate routers since the URL space is already owned by tasksRouter.
 app.use('/api/v1/boards', boardsRouter);
 app.use('/api/v1/tasks', tasksRouter);
 
-// TODO (future): mount /api/v1/*/time-entries, /api/v1/*/attachments,
-// /api/v1/*/members, /api/v1/*/shares once acceptance criteria are in place.
-// See CLAUDE.md "API" and "Дані" sections.
+// TODO (future): mount /api/v1/*/members, /api/v1/*/shares once acceptance
+// criteria are in place. See CLAUDE.md "API" and "Дані" sections.
 
 module.exports = app;

@@ -2,6 +2,7 @@ const db = require('../db/knex');
 const { ValidationError, NotFoundError } = require('../lib/serviceErrors');
 const { getOwnedBoard } = require('../lib/authz');
 const { lockedUpdate } = require('../lib/db');
+const storage = require('../lib/storage');
 
 const TITLE_MAX_LENGTH = 100;
 
@@ -121,15 +122,42 @@ async function deleteBoard(boardId, ownerId) {
   // Folding the ownership check into the locked read (via getOwnedBoard's
   // trx/forUpdate options) avoids a second unlocked-then-locked read gap,
   // same fix shape as createTask.
+  // Collected inside the transaction below (storage_path of every file-kind
+  // attachment under any task on this board), then used to clean up the
+  // corresponding MinIO objects AFTER the transaction commits — same
+  // best-effort, outside-the-trx shape as tasks.service.js's deleteTask
+  // (see its comment for the full rationale).
+  let orphanedStorageKeys = [];
+
   await db.transaction(async (trx) => {
     await getOwnedBoard(boardId, ownerId, { trx, forUpdate: true });
-    // `tasks.board_id` is ON DELETE CASCADE (see migration) — this single
-    // delete removes every task under the board at the DB level. Nothing to
-    // clean up in storage yet since attachments don't exist this pass; once
-    // they do, cascading storage cleanup will hook in alongside this, not
-    // replace it.
+
+    // `tasks.board_id` and `attachments.task_id` are both ON DELETE CASCADE
+    // (see migrations) — the single DELETE below removes every task AND
+    // every attachment row under this board at the DB level. That cascade
+    // only touches Postgres, not the MinIO objects file-kind attachments
+    // point at, so their keys are read here first, before the cascade
+    // removes the rows that reference them (US9).
+    orphanedStorageKeys = (
+      await trx('attachments')
+        .join('tasks', 'tasks.id', 'attachments.task_id')
+        .where({ 'tasks.board_id': boardId, 'attachments.kind': 'file' })
+        .select('attachments.storage_path as storage_path')
+    )
+      .map((r) => r.storage_path)
+      .filter(Boolean);
+
     await trx('boards').where({ id: boardId }).delete();
   });
+
+  await Promise.all(
+    orphanedStorageKeys.map((key) =>
+      storage.deleteObject(key).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to delete attachment object from storage after board delete', key, err);
+      }),
+    ),
+  );
 }
 
 module.exports = {

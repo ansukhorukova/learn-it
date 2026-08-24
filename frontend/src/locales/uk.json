@@ -89,7 +89,9 @@
         "many": "{count} тасок",
         "other": "{count} таски"
       },
-      "totalTimePlaceholder": "—",
+      "totalTime": "Всього: {duration}",
+      "thisWeek": "За цей тиждень: {duration}",
+      "noTimeYet": "Ще немає записаного часу",
       "rename": "Перейменувати",
       "delete": "Видалити"
     },
@@ -139,11 +141,106 @@
         "titleTooLong": "Назва таски має містити не більше 200 символів"
       }
     },
+    "rename": {
+      "cta": "Перейменувати",
+      "titleLabel": "Назва",
+      "validation": {
+        "titleRequired": "Вкажіть назву таски",
+        "titleTooLong": "Назва таски має містити не більше 200 символів"
+      }
+    },
     "delete": {
       "cta": "Видалити",
       "confirmTitle": "Видалити таску?",
       "confirmMessage": "Це остаточно видалить «{title}». Дію не можна скасувати.",
       "confirmButton": "Видалити таску"
+    },
+    "card": {
+      "open": "Відкрити",
+      "attachmentCount": {
+        "one": "{count} вкладення",
+        "few": "{count} вкладення",
+        "many": "{count} вкладень",
+        "other": "{count} вкладення"
+      },
+      "timeBadge": "{duration}"
+    }
+  },
+  "attachment": {
+    "panel": {
+      "title": "Вкладення",
+      "close": "Закрити",
+      "loading": "Завантаження вкладень…",
+      "empty": "Ще немає вкладень."
+    },
+    "group": {
+      "files": "Файли",
+      "links": "Посилання",
+      "notes": "Нотатки"
+    },
+    "add": {
+      "file": "Додати файл",
+      "link": "Додати посилання",
+      "note": "Додати нотатку"
+    },
+    "file": {
+      "chooseLabel": "Виберіть файл",
+      "uploading": "Завантаження…",
+      "hint": "Зображення, PDF, документи Word або звичайний текст — до 25МБ."
+    },
+    "link": {
+      "titleLabel": "Заголовок",
+      "titlePlaceholder": "Заголовок посилання",
+      "urlLabel": "URL",
+      "urlPlaceholder": "https://example.com",
+      "submit": "Додати посилання",
+      "saving": "Додавання…"
+    },
+    "note": {
+      "bodyLabel": "Нотатка",
+      "bodyPlaceholder": "Напишіть коротку нотатку…",
+      "submit": "Додати нотатку",
+      "saving": "Додавання…"
+    },
+    "delete": {
+      "cta": "Видалити",
+      "confirmTitle": "Видалити вкладення?",
+      "confirmMessage": "Це остаточно видалить це вкладення. Дію не можна скасувати.",
+      "confirmButton": "Видалити вкладення"
+    }
+  },
+  "timeEntry": {
+    "section": {
+      "title": "Час"
+    },
+    "timer": {
+      "start": "Почати таймер",
+      "stop": "Зупинити таймер",
+      "running": "Триває — {duration}",
+      "switchedNotice": "Запущено цей таймер — зупинено той, що йшов на іншій тасці.",
+      "stopNoteLabel": "Нотатка (необов'язково)"
+    },
+    "sessions": {
+      "title": "Сесії",
+      "empty": "Ще немає записаних сесій",
+      "total": "Всього: {duration}"
+    },
+    "manual": {
+      "cta": "Додати час вручну",
+      "minutesLabel": "Хвилини",
+      "notePlaceholder": "Додайте нотатку (необов'язково)",
+      "submit": "Додати запис",
+      "saving": "Додавання…"
+    },
+    "edit": {
+      "cta": "Редагувати",
+      "submit": "Зберегти зміни"
+    },
+    "delete": {
+      "cta": "Видалити",
+      "confirmTitle": "Видалити цей запис?",
+      "confirmMessage": "Це остаточно видалить цей запис часу. Дію не можна скасувати.",
+      "confirmButton": "Видалити запис"
     }
   },
   "errors": {
@@ -167,6 +264,36 @@
       "invalidStatus": "Некоректний статус таски.",
       "positionConflict": "Дошка змінилася, поки ви працювали. Спробуйте ще раз."
     },
+    "attachment": {
+      "notFound": "Вкладення не знайдено.",
+      "invalidKind": "Некоректний тип вкладення.",
+      "titleRequired": "Вкажіть заголовок посилання.",
+      "titleTooLong": "Заголовок посилання має містити не більше 200 символів.",
+      "urlRequired": "Вкажіть URL.",
+      "urlTooLong": "URL має містити не більше 2000 символів.",
+      "urlInvalid": "Введіть коректний URL, що починається з http:// або https://.",
+      "noteBodyRequired": "Вкажіть текст нотатки.",
+      "noteBodyTooLong": "Текст нотатки має містити не більше 2000 символів.",
+      "fileRequired": "Виберіть файл для завантаження.",
+      "invalidFileType": "Цей тип файлу не підтримується.",
+      "fileTooLarge": "Файл завеликий. Максимальний розмір — 25МБ.",
+      "uploadFailed": "Не вдалося завантажити файл. Спробуйте ще раз."
+    },
+    "timeEntry": {
+      "noActiveTimer": "На цій тасці не запущено таймер.",
+      "startConflict": "Не вдалося запустити таймер через конфліктний запит. Спробуйте ще раз.",
+      "minutesInvalid": "Введіть ціле число хвилин, більше за 0.",
+      "minutesTooLarge": "Один запис не може перевищувати 24 години (1440 хвилин).",
+      "noteTooLong": "Нотатка має містити не більше 500 символів.",
+      "notFound": "Запис часу не знайдено."
+    },
     "generic": "Щось пішло не так. Спробуйте ще раз."
+  },
+  "time": {
+    "unit": {
+      "hoursMinutes": "{hours}год {minutes}хв",
+      "minutes": "{minutes}хв",
+      "hours": "{hours}год"
+    }
   }
 }

@@ -39,6 +39,44 @@ async function createTask(boardId, ownerId, overrides = {}) {
   return row;
 }
 
+// Note-kind by default — no storage side effect to worry about cleaning up
+// in a test fixture (unlike kind: 'file', which would need a real/mocked S3
+// call). Concurrency tests only care about the DB row's lock behavior.
+async function createAttachment(taskId, ownerId, overrides = {}) {
+  const [row] = await db('attachments')
+    .insert({
+      task_id: taskId,
+      created_by: ownerId,
+      kind: overrides.kind || 'note',
+      body: overrides.body || 'Test note',
+      title: overrides.title,
+      url: overrides.url,
+    })
+    .returning('*');
+  return row;
+}
+
+// Completed by default (ended_at/duration_seconds set) — a fixture for the
+// edit/delete concurrency cases, which only ever operate on completed
+// entries (an active one is a single row directly reachable via
+// `whereNull('ended_at')`, no fixture helper needed for that case).
+async function createTimeEntry(taskId, userId, overrides = {}) {
+  const durationSeconds = overrides.durationSeconds ?? 600;
+  const endedAt = overrides.endedAt === undefined ? new Date() : overrides.endedAt;
+  const startedAt = overrides.startedAt || (endedAt ? new Date(endedAt.getTime() - durationSeconds * 1000) : new Date());
+  const [row] = await db('time_entries')
+    .insert({
+      task_id: taskId,
+      user_id: userId,
+      started_at: startedAt,
+      ended_at: endedAt,
+      duration_seconds: endedAt ? durationSeconds : null,
+      note: overrides.note,
+    })
+    .returning('*');
+  return row;
+}
+
 // Deleting the user cascades away every board/task the test created under
 // it (boards.owner_id and tasks.created_by are both ON DELETE CASCADE from
 // users; tasks.board_id is ON DELETE CASCADE from boards) — one call cleans
@@ -60,4 +98,4 @@ function wait(ms) {
   });
 }
 
-module.exports = { db, createUser, createBoard, createTask, cleanupUser, wait };
+module.exports = { db, createUser, createBoard, createTask, createAttachment, createTimeEntry, cleanupUser, wait };

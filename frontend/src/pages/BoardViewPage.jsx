@@ -7,9 +7,11 @@ import { CSS } from '@dnd-kit/utilities';
 import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
 import { useHeadMeta } from '../lib/useHeadMeta';
+import { formatDuration } from '../lib/duration';
 import { createTask, deleteTask, getBoard, listTasks, updateTask } from '../api/client';
 import AppHeader from '../components/AppHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
+import TaskPanel from '../components/TaskPanel';
 import styles from './BoardViewPage.module.css';
 
 const TITLE_MAX_LENGTH = 200;
@@ -39,7 +41,14 @@ function groupByStatus(tasks) {
 // body; the status <select> next to it is the required accessible fallback
 // (US8) — a separate control, not a stand-in for dnd-kit's keyboard sensor,
 // reachable via Tab+Enter regardless of whether the user ever drags anything.
-function TaskCard({ task, columnLabels, onDelete, onStatusChange, t }) {
+// `attachmentCount` (US9) is a real live count from the BE (tasks.service.js
+// listTasksForBoard), rendered as a badge — this replaces the placeholder
+// absence from the boards/tasks pass, when attachments didn't exist yet.
+// The "Open" button (not the drag handle) is what opens the attachments
+// panel — a dedicated, keyboard-reachable control, deliberately separate
+// from the drag-and-drop surface so opening the panel never races dnd-kit's
+// pointer sensor.
+function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
 
   const style = {
@@ -52,6 +61,14 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, t }) {
     <li ref={setNodeRef} style={style} className={styles.card}>
       <div className={styles.cardHandle} {...attributes} {...listeners}>
         <span className={styles.cardTitle}>{task.title}</span>
+        <div className={styles.cardBadges}>
+          {task.attachmentCount > 0 && (
+            <span className={styles.attachmentBadge}>{t('task.card.attachmentCount', { count: task.attachmentCount })}</span>
+          )}
+          {task.totalSeconds > 0 && (
+            <span className={styles.timeBadge}>{t('task.card.timeBadge', { duration: formatDuration(task.totalSeconds, t) })}</span>
+          )}
+        </div>
       </div>
       <div className={styles.cardControls}>
         <label className={styles.srOnly} htmlFor={`task-status-${task.id}`}>
@@ -69,6 +86,9 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, t }) {
             </option>
           ))}
         </select>
+        <button type="button" className={styles.openButton} onClick={() => onOpen(task)}>
+          {t('task.card.open')}
+        </button>
         <button type="button" className={styles.deleteButton} onClick={() => onDelete(task)}>
           {t('task.delete.cta')}
         </button>
@@ -77,7 +97,7 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, t }) {
   );
 }
 
-function Column({ status, label, tasks, columnLabels, onDelete, onStatusChange, t }) {
+function Column({ status, label, tasks, columnLabels, onDelete, onStatusChange, onOpen, t }) {
   const { setNodeRef } = useDroppable({ id: status });
 
   return (
@@ -92,6 +112,7 @@ function Column({ status, label, tasks, columnLabels, onDelete, onStatusChange, 
               columnLabels={columnLabels}
               onDelete={onDelete}
               onStatusChange={onStatusChange}
+              onOpen={onOpen}
               t={t}
             />
           ))}
@@ -109,7 +130,7 @@ function Column({ status, label, tasks, columnLabels, onDelete, onStatusChange, 
 function BoardViewPage() {
   const { boardId } = useParams();
   const { user, loading: authLoading } = useAuthUser();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [board, setBoard] = useState(null);
   const [columns, setColumns] = useState(emptyColumns());
@@ -123,6 +144,8 @@ function BoardViewPage() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletingTask, setDeletingTask] = useState(false);
+
+  const [panelTask, setPanelTask] = useState(null);
 
   const dragSnapshot = useRef(null);
 
@@ -288,6 +311,47 @@ function BoardViewPage() {
     }
   }
 
+  // Keeps the task card's attachment-count badge (US9) in sync with the
+  // panel's own attachments list without a full task-list re-fetch — called
+  // by TaskPanel whenever it loads or mutates its attachments.
+  const handleAttachmentCountChange = useCallback((taskId, count) => {
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const status of Object.keys(next)) {
+        next[status] = next[status].map((task) => (task.id === taskId ? { ...task, attachmentCount: count } : task));
+      }
+      return next;
+    });
+  }, []);
+
+  // Keeps the task card's time badge (US12 AC4) in sync with TaskPanel's own
+  // time-tracking data, same shape as handleAttachmentCountChange above.
+  const handleTimeSummaryChange = useCallback((taskId, totalSeconds) => {
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const status of Object.keys(next)) {
+        next[status] = next[status].map((task) => (task.id === taskId ? { ...task, totalSeconds } : task));
+      }
+      return next;
+    });
+  }, []);
+
+  // Keeps the task card's title in sync after a rename in TaskPanel, without
+  // a full task-list re-fetch — same shape as handleAttachmentCountChange
+  // above. Also updates `panelTask` itself so the panel's own header reflects
+  // the new title immediately (it's a separate piece of state from
+  // `columns`, not a reference into it — see TaskPanelWithToken below).
+  const handleTaskTitleUpdated = useCallback((taskId, title) => {
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const status of Object.keys(next)) {
+        next[status] = next[status].map((task) => (task.id === taskId ? { ...task, title } : task));
+      }
+      return next;
+    });
+    setPanelTask((prev) => (prev && prev.id === taskId ? { ...prev, title } : prev));
+  }, []);
+
   async function confirmDeleteTask() {
     if (!deleteTarget) return;
     setDeletingTask(true);
@@ -410,6 +474,7 @@ function BoardViewPage() {
                   columnLabels={columnLabels}
                   onDelete={setDeleteTarget}
                   onStatusChange={handleStatusChange}
+                  onOpen={setPanelTask}
                   t={t}
                 />
               ))}
@@ -429,7 +494,54 @@ function BoardViewPage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
+
+      {panelTask && user && (
+        <TaskPanelWithToken
+          task={panelTask}
+          user={user}
+          t={t}
+          locale={locale}
+          onClose={() => setPanelTask(null)}
+          onAttachmentCountChange={handleAttachmentCountChange}
+          onTitleUpdated={handleTaskTitleUpdated}
+          onTimeSummaryChange={handleTimeSummaryChange}
+        />
+      )}
     </div>
+  );
+}
+
+// TaskPanel needs the caller's current Firebase ID token for every API call
+// (same `user.getIdToken()` pattern as every other action on this page), but
+// that's an async call — this tiny wrapper resolves it once when the panel
+// opens and only then mounts TaskPanel, instead of threading token-loading
+// state through the panel component itself.
+function TaskPanelWithToken({ task, user, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onTimeSummaryChange }) {
+  const [idToken, setIdToken] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    user.getIdToken().then((token) => {
+      if (!cancelled) setIdToken(token);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  if (!idToken) return null;
+
+  return (
+    <TaskPanel
+      task={task}
+      idToken={idToken}
+      t={t}
+      locale={locale}
+      onClose={onClose}
+      onAttachmentCountChange={onAttachmentCountChange}
+      onTitleUpdated={onTitleUpdated}
+      onTimeSummaryChange={onTimeSummaryChange}
+    />
   );
 }
 

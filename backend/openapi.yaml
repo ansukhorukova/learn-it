@@ -148,6 +148,10 @@ paths:
         Boards overview (US1). Scoped strictly to boards owned by the caller
         — no "shared with me" boards, since sharing doesn't exist yet.
         `taskCount` is computed live via COUNT, never denormalized.
+        `totalSeconds`/`thisWeekSeconds` (US12) are the caller's own tracked
+        time across every task on the board — all-time and since the current
+        calendar week's Monday 00:00 UTC boundary, respectively — computed
+        live, never denormalized.
       operationId: listBoards
       tags: [boards]
       security:
@@ -323,7 +327,13 @@ paths:
           format: uuid
     get:
       summary: List tasks for a board
-      description: Board view (US5) — all tasks across all three status columns.
+      description: >
+        Board view (US5) — all tasks across all three status columns. Each
+        task's `totalSeconds` (US12 AC4) is the caller's own tracked time on
+        it (completed sessions + a running timer's live elapsed time, if
+        any). `columnTotals`/`boardTotalSeconds` (US12 AC5) sum that same
+        per-task value by column and across the whole board — all computed
+        live, never denormalized.
       operationId: listBoardTasks
       tags: [tasks]
       security:
@@ -340,7 +350,21 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Task'
-                required: [tasks]
+                  columnTotals:
+                    type: object
+                    description: Sum of `totalSeconds` per status column, for the caller's own time only.
+                    properties:
+                      planned:
+                        type: integer
+                      in_progress:
+                        type: integer
+                      done:
+                        type: integer
+                    required: [planned, in_progress, done]
+                  boardTotalSeconds:
+                    type: integer
+                    description: Sum of `totalSeconds` across every task on the board, for the caller's own time only.
+                required: [tasks, columnTotals, boardTotalSeconds]
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -522,6 +546,524 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /tasks/{id}/attachments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a task's attachments
+      description: >
+        Attachments (US9), grouped by `kind` on the FE (Files / Links /
+        Notes), ordered oldest-first. `kind: 'file'` rows include a freshly
+        generated short-lived `downloadUrl` (signed GET URL against the
+        S3-compatible bucket, ~15 minutes) — the FE never talks to storage
+        directly, it only ever receives this URL from the BE.
+      operationId: listTaskAttachments
+      tags: [attachments]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The task's attachments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Attachment'
+                required: [attachments]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a file, link, or note attachment
+      description: >
+        Create attachment (US9). New rows always default to
+        `visibility: 'private'` — no visibility picker exists yet
+        (sharing is a later pass). `createdBy` is always the caller.
+
+
+        Two request shapes, both accepted by this one endpoint:
+          - `kind: 'link'` / `kind: 'note'` — `application/json` body.
+          - `kind: 'file'` — `multipart/form-data` with a `kind=file` field
+            and the file itself in a `file` field. The FE never uploads
+            straight to storage (CLAUDE.md: "FE ніколи не звертається до
+            сховища напряму") — the file bytes are proxied through this
+            endpoint, which then does the S3 `PutObject` call server-side.
+            Allowed types: common image formats (png/jpeg/gif/webp),
+            PDF, Word (.doc/.docx), and plain text. Max size: 25MB.
+            SVG is deliberately not allowed (stored-XSS risk: attachment
+            chips open via `<a target="_blank">`, which renders SVG as a
+            live document rather than an inert image).
+      operationId: createTaskAttachment
+      tags: [attachments]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachmentWriteRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                kind:
+                  type: string
+                  enum: [file]
+                file:
+                  type: string
+                  format: binary
+              required: [kind, file]
+      responses:
+        '201':
+          description: The newly created attachment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        '400':
+          description: >
+            Invalid `kind`; missing/empty link title or URL; malformed URL;
+            missing/empty note body; note body too long; missing file;
+            unsupported file MIME type; or file too large (>25MB).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/attachments/{attachmentId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: attachmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: Delete an attachment
+      description: >
+        Delete attachment (US9), irreversible. Removes the DB row and, for
+        `kind: 'file'`, the corresponding object in the S3-compatible bucket
+        — never one without the other, so no orphaned storage object and no
+        DB row pointing at a deleted object.
+      operationId: deleteTaskAttachment
+      tags: [attachments]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id, or no attachment with this id under it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/time-entries:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List the caller's own time entries for a task, plus totals
+      description: >
+        Sessions list + timer section (US12 AC1-3). `entries` is the
+        caller's own COMPLETED sessions, newest first — the running one, if
+        any, is `activeEntry` instead (edited only via the stop endpoint,
+        never through the edit/delete session list). `totalSeconds` is the
+        sum of completed durations plus the active entry's live elapsed
+        time, if running.
+
+
+        **Contract invariant**: this endpoint NEVER returns another user's
+        `time_entries` rows, under any circumstance — `WHERE user_id =
+        <caller>` is unconditional in the implementation
+        (timeEntries.service.js's listTimeEntriesForTask). A future team-view
+        feature that shows other members' time will do so through a
+        different, explicitly-aggregate-only endpoint — never by widening
+        this one (CLAUDE.md: "Приватність time_entries").
+      operationId: listTaskTimeEntries
+      tags: [time-entries]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The caller's own sessions on this task, plus totals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TimeEntry'
+                  activeEntry:
+                    allOf:
+                      - $ref: '#/components/schemas/TimeEntry'
+                    nullable: true
+                  totalSeconds:
+                    type: integer
+                required: [entries, activeEntry, totalSeconds]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Add a manual (already-completed) time entry
+      description: >
+        Manual entry / correction (US11 AC1-4). Creates a COMPLETED session:
+        `endedAt = now()`, `startedAt = endedAt - minutes*60s`,
+        `durationSeconds = minutes*60`. Never touches the active-timer state
+        — use the `/start`/`/stop` endpoints for that.
+      operationId: createTaskTimeEntry
+      tags: [time-entries]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeEntryWriteRequest'
+      responses:
+        '201':
+          description: The newly created (completed) entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeEntry'
+        '400':
+          description: >
+            `minutes` missing/zero/negative/non-integer
+            (errors.timeEntry.minutesInvalid); `minutes` > 1440
+            (errors.timeEntry.minutesTooLarge); `note` longer than 500
+            characters (errors.timeEntry.noteTooLong).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/time-entries/start:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Start the timer on this task
+      description: >
+        Start timer (US10 AC1-2). Product decision: **auto-stop-and-switch**
+        — if the caller already has an active timer running on ANY task
+        (this app allows only one active timer per user, not per task), it
+        is auto-stopped (`endedAt = now()`, `durationSeconds` computed) in
+        the same transaction as the new start, and returned as
+        `autoStoppedEntry` so the FE can show a "switched timers" notice.
+        `autoStoppedEntry` is `null` when there was no active timer to stop.
+      operationId: startTaskTimer
+      tags: [time-entries]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '201':
+          description: The newly started entry, plus the auto-stopped one if any
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  startedEntry:
+                    $ref: '#/components/schemas/TimeEntry'
+                  autoStoppedEntry:
+                    allOf:
+                      - $ref: '#/components/schemas/TimeEntry'
+                    nullable: true
+                required: [startedEntry, autoStoppedEntry]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: >
+            Extremely unlikely: exhausted retries against repeated
+            concurrent starts from the same user (errors.timeEntry.startConflict).
+            Safe to retry the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/time-entries/stop:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Stop the caller's active timer on this task
+      description: >
+        Stop timer (US10 AC4-5). `endedAt = now()`, `durationSeconds`
+        computed from `startedAt`. An optional `note` is stored on the
+        stopped entry.
+      operationId: stopTaskTimer
+      tags: [time-entries]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+      responses:
+        '200':
+          description: The stopped entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeEntry'
+        '400':
+          description: '`note` longer than 500 characters (errors.timeEntry.noteTooLong)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: >
+            No timer is currently running on this task
+            (errors.timeEntry.noActiveTimer) — including a race where it was
+            just stopped by another concurrent request. Not retryable as-is.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/time-entries/{entryId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: entryId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Edit a completed time entry's minutes and/or note
+      description: >
+        Edit / correct a session (US11 AC5-7). `startedAt` never changes —
+        only `durationSeconds` and `endedAt` (recomputed as `startedAt +
+        durationSeconds`) when `minutes` is given. Only ever the caller's own
+        COMPLETED entries: an entry that's still active (`endedAt IS NULL`
+        — edit it via the stop endpoint instead) or belongs to another user
+        both resolve to the same 404 as a nonexistent id, never 403 — an
+        anti-enumeration guarantee for time-tracking privacy (CLAUDE.md
+        "Приватність time_entries"), matching how boards/tasks otherwise use
+        403 for "exists but not yours".
+      operationId: updateTaskTimeEntry
+      tags: [time-entries]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeEntryWriteRequest'
+      responses:
+        '200':
+          description: The updated entry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeEntry'
+        '400':
+          description: >
+            `minutes` present but zero/negative/non-integer
+            (errors.timeEntry.minutesInvalid); `minutes` > 1440
+            (errors.timeEntry.minutesTooLarge); `note` longer than 500
+            characters (errors.timeEntry.noteTooLong).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: >
+            No task with this id; no entry with this id under it; the entry
+            is still active; or the entry belongs to another user
+            (errors.timeEntry.notFound — see description above).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a time entry
+      description: >
+        Delete a session (US11 AC8), active or completed — deleting an
+        active one cancels the timer with nothing saved, no separate
+        "cancel" endpoint. Same anti-enumeration 404 contract as the PATCH
+        above (never 403 for another user's entry).
+      operationId: deleteTaskTimeEntry
+      tags: [time-entries]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task's board belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id; no entry with this id under it; or the entry belongs to another user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   responses:
     Unauthorized:
@@ -583,13 +1125,23 @@ components:
           description: Firebase UID of the owner
         taskCount:
           type: integer
+        totalSeconds:
+          type: integer
+          description: >
+            Caller's own all-time tracked time across every task on this
+            board (US12 AC6). Computed live, never denormalized.
+        thisWeekSeconds:
+          type: integer
+          description: >
+            Caller's own tracked time on this board since the current
+            calendar week's Monday 00:00 UTC boundary (US12 AC6).
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, title, description, accent, ownerId, taskCount, createdAt, updatedAt]
+      required: [id, title, description, accent, ownerId, taskCount, totalSeconds, thisWeekSeconds, createdAt, updatedAt]
 
     BoardWriteRequest:
       type: object
@@ -627,13 +1179,158 @@ components:
         createdBy:
           type: string
           description: Firebase UID of the creator
+        attachmentCount:
+          type: integer
+          description: >
+            Live count of this task's attachments (US9) — computed via
+            COUNT, never denormalized. Rendered as a badge on the task card.
+        totalSeconds:
+          type: integer
+          description: >
+            Caller's own tracked time on this task (US12 AC4): completed
+            sessions' durations plus a running timer's live elapsed time, if
+            any. Computed live, never denormalized. Rendered as a badge on
+            the task card, hidden when 0.
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, boardId, title, notes, status, position, createdBy, createdAt, updatedAt]
+      required: [id, boardId, title, notes, status, position, createdBy, attachmentCount, totalSeconds, createdAt, updatedAt]
+
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [file, link, note]
+        title:
+          type: string
+          nullable: true
+          description: File original filename (kind file) or link title (kind link). Null for notes.
+        url:
+          type: string
+          nullable: true
+          description: Link target URL (kind link only).
+        mimeType:
+          type: string
+          nullable: true
+          description: Uploaded file's MIME type (kind file only).
+        body:
+          type: string
+          nullable: true
+          description: Note text (kind note only).
+        downloadUrl:
+          type: string
+          nullable: true
+          description: >
+            Short-lived signed GET URL (kind file only) — present only when
+            the row is kind file, absent for link/note. Regenerated on every
+            list/create call, never persisted.
+        isImage:
+          type: boolean
+          description: >
+            True when mimeType is an image/* type (kind file only) — tells
+            the FE to render a thumbnail preview instead of a generic file
+            chip.
+        visibility:
+          type: string
+          enum: [private, shared, selected]
+          description: >
+            Always 'private' this pass — no visibility picker UI exists yet
+            (sharing is a later feature). The full enum range already exists
+            in the schema so that pass won't need a migration.
+        createdBy:
+          type: string
+          description: Firebase UID of the creator
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, taskId, kind, visibility, createdBy, createdAt, updatedAt]
+
+    AttachmentWriteRequest:
+      type: object
+      description: Used for kind 'link' and kind 'note' (application/json). See the multipart schema on POST /tasks/{id}/attachments for kind 'file'.
+      properties:
+        kind:
+          type: string
+          enum: [link, note]
+        title:
+          type: string
+          maxLength: 200
+          description: Required for kind 'link'.
+        url:
+          type: string
+          maxLength: 2000
+          description: Required for kind 'link'. Must be a valid http(s) URL.
+        body:
+          type: string
+          maxLength: 2000
+          description: Required for kind 'note'.
+      required: [kind]
+
+    TimeEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: Firebase UID of the entry's owner — always the caller for any entry this API ever returns.
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null while the timer is running (US10) — a completed entry always has this set.
+        durationSeconds:
+          type: integer
+          nullable: true
+          description: Null while the timer is running. Set together with endedAt once stopped.
+        note:
+          type: string
+          nullable: true
+          maxLength: 500
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, taskId, userId, startedAt, endedAt, durationSeconds, note, createdAt, updatedAt]
+
+    TimeEntryWriteRequest:
+      type: object
+      description: >
+        Used by both POST (create, `minutes` required) and PATCH (edit, both
+        fields optional — omit a field to leave it unchanged).
+      properties:
+        minutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: Whole minutes, 1-1440 (24h). See errors.timeEntry.minutesInvalid/minutesTooLarge.
+        note:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Optional. On PATCH, an explicit null clears an existing note.
 
     ApiError:
       type: object

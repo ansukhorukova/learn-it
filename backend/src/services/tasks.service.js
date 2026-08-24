@@ -4,6 +4,7 @@ const { ValidationError, NotFoundError, ForbiddenError, ConflictError } = requir
 const { getOwnedBoard } = require('../lib/authz');
 const { isUniqueViolation, isDeadlock } = require('../lib/dbErrors');
 const { lockRow, lockedUpdate } = require('../lib/db');
+const storage = require('../lib/storage');
 
 const TITLE_MAX_LENGTH = 200;
 const STATUSES = ['planned', 'in_progress', 'done'];
@@ -17,6 +18,12 @@ const DEFAULT_STATUS = STATUSES[0];
 // holding hundreds of tasks is still a handful of single-row updates).
 const POSITION_GAP = 1000;
 
+// `attachmentCount` is only present on rows read via listTasksForBoard
+// (LEFT JOIN + COUNT, same live-aggregation pattern as boards.service.js's
+// taskCount — never a denormalized column that could drift). Rows read by
+// any other path in this file (create/update/delete, all single-task reads)
+// don't join attachments, so this defaults to 0 there rather than showing a
+// stale/wrong count.
 function toTask(row) {
   return {
     id: row.id,
@@ -26,6 +33,7 @@ function toTask(row) {
     status: row.status,
     position: row.position,
     createdBy: row.created_by,
+    attachmentCount: row.attachment_count !== undefined ? Number(row.attachment_count) || 0 : 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -63,11 +71,21 @@ async function getOwnedTaskWithBoard(taskId, ownerId) {
   return row;
 }
 
+// `attachmentCount` (US9): LEFT JOIN + COUNT against `attachments`, grouped
+// by task — same live-aggregation approach as boards.service.js's
+// taskCount, so the board view's per-card badge is always accurate and
+// never needs a denormalized counter kept in sync on writes elsewhere
+// (attachments.service.js's create/delete). `tasks.*`/order-by columns are
+// qualified to avoid ambiguity now that a second table is joined in.
 async function listTasksForBoard(boardId, ownerId) {
   await getOwnedBoard(boardId, ownerId);
   const rows = await db('tasks')
-    .where({ board_id: boardId })
-    .orderBy([{ column: 'status' }, { column: 'position', order: 'asc' }]);
+    .leftJoin('attachments', 'attachments.task_id', 'tasks.id')
+    .where({ 'tasks.board_id': boardId })
+    .groupBy('tasks.id')
+    .select('tasks.*')
+    .count('attachments.id as attachment_count')
+    .orderBy([{ column: 'tasks.status' }, { column: 'tasks.position', order: 'asc' }]);
   return rows.map(toTask);
 }
 
@@ -279,6 +297,12 @@ async function updateTask(taskId, ownerId, { title, status, position } = {}) {
 async function deleteTask(taskId, ownerId) {
   const task = await getOwnedTaskWithBoard(taskId, ownerId);
 
+  // Collected inside the transaction below (storage_path of every file-kind
+  // attachment this task owns), then used to clean up the corresponding
+  // MinIO objects AFTER the transaction commits — see the comment further
+  // down for why this exists.
+  let orphanedStorageKeys = [];
+
   try {
     await db.transaction(async (trx) => {
       // Lock the parent board row first, same invariant/order as
@@ -297,9 +321,20 @@ async function deleteTask(taskId, ownerId) {
       // delete instead of racing it.
       const row = await lockRow(trx, 'tasks', taskId, () => new NotFoundError('errors.task.notFound'));
 
-      // Nothing else to cascade yet — no attachments/time_entries tables
-      // this pass (CLAUDE.md "Поза межами цього етапу" equivalent for
-      // Phase 1).
+      // `attachments.task_id` is ON DELETE CASCADE (US9 migration), so the
+      // task DELETE below removes every attachment row under it for free at
+      // the DB level — but that cascade only touches Postgres, not the
+      // MinIO objects file-kind attachments point at. Read their keys now,
+      // before the rows disappear, so they can be removed from storage
+      // after this transaction commits (best-effort, outside the trx — a
+      // storage-delete failure shouldn't roll back a task deletion the user
+      // already confirmed).
+      orphanedStorageKeys = (
+        await trx('attachments').where({ task_id: taskId, kind: 'file' }).select('storage_path')
+      )
+        .map((r) => r.storage_path)
+        .filter(Boolean);
+
       await trx('tasks').where({ id: taskId }).delete();
     });
   } catch (err) {
@@ -312,10 +347,20 @@ async function deleteTask(taskId, ownerId) {
     }
     throw err;
   }
+
+  await Promise.all(
+    orphanedStorageKeys.map((key) =>
+      storage.deleteObject(key).catch((storageErr) => {
+        // eslint-disable-next-line no-console
+        console.error('Failed to delete attachment object from storage after task delete', key, storageErr);
+      }),
+    ),
+  );
 }
 
 module.exports = {
   STATUSES,
+  getOwnedTaskWithBoard,
   listTasksForBoard,
   createTask,
   updateTask,

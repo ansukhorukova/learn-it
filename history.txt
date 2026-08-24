@@ -120,3 +120,36 @@ PROJECT_MAP.md — історія змін
     прямо позначене як "не потребує фіксу", не прогалина.
   Коміт: docs: update PROJECT_MAP.md — Task attachments позначено done
     після Approve, FE_TaskPanel — progress (лише секція вкладень)
+
+2026-08-24 — Task rename UI (TaskPanel): додано поза звичайним review pipeline
+  На явний запит користувача крок tester/code-reviewer пропущено для цієї
+    конкретної зміни — маленька, добре зрозуміла UI-правка (дзеркалить
+    заапрувлений патерн board-rename, використовує вже протестований і
+    concurrency-safe BE-ендпоінт PATCH /tasks/:id без змін на бекенді).
+    Це відхилення від звичайного правила картографа "оновлювати карту
+    лише після Approve від code-reviewer" — зроблено свідомо на прямий
+    запит користувача, задокументовано як виняток, а не як обхід процесу.
+    - FE: frontend/src/components/TaskPanel.jsx — inline rename-форма
+      (лейбл, save/cancel, за UX-патерном BoardsPage.jsx), client-side
+      валідація (task.rename.validation.titleRequired/titleTooLong,
+      той самий ліміт 200 символів, що вже діє на бекенді).
+      frontend/src/pages/BoardViewPage.jsx — синхронізація заголовка
+      картки таски після rename у TaskPanel.
+    - Нові локалі: task.rename.cta, task.rename.titleLabel,
+      task.rename.validation.titleRequired,
+      task.rename.validation.titleTooLong — EN/UK, обидві повні.
+    - BE-змін немає — title-only шлях PATCH /tasks/:id вже існував і
+      був повністю протестований у межах ранішої фічі Tasks CRUD.
+    - Користувач особисто перевірив наживо (успішний rename, валідація
+      пустого/задовгого заголовка, 403 для не-власника); тестові дані
+      прибрані вручну після переривання сесії реалізуючого агента.
+  Статуси вузлів НЕ змінені: title-редагування вже неявно охоплювалось
+    описом done-вузлів BE_Tasks/DB_Tasks ("CRUD"); FE_TaskPanel лишається
+    progress (вузол означає секцію "Час", не rename); FE_BoardView
+    лишається done без змін.
+  Нових вузлів на карту не додано.
+  Залоговано нову "відому прогалину": task rename UI не пройшов
+    code-review — нижча впевненість верифікації, ніж решта done-роботи;
+    рекомендовано провести review pass, коли буде зручно.
+  Коміт: docs: update PROJECT_MAP.md — task rename UI додано поза
+    review pipeline на запит користувача, зафіксовано як follow-up

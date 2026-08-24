@@ -49,18 +49,21 @@ export class ApiRequestError extends Error {
   }
 }
 
-// Shared fetch wrapper for the boards/tasks endpoints below — every call
-// carries the caller's Firebase ID token (obtained by the component via
-// `user.getIdToken()`, same pattern as fetchCurrentUser above) and parses
-// the standard { error: { code, messageKey, message } } envelope on failure.
-async function request(path, { method = 'GET', idToken, body } = {}) {
+// Shared fetch wrapper for the boards/tasks/attachments endpoints below —
+// every call carries the caller's Firebase ID token (obtained by the
+// component via `user.getIdToken()`, same pattern as fetchCurrentUser above)
+// and parses the standard { error: { code, messageKey, message } } envelope
+// on failure. `formData` (used only by uploadFileAttachment) skips the JSON
+// Content-Type/stringify path — the browser sets the correct multipart
+// boundary header itself when the body is a FormData instance.
+async function request(path, { method = 'GET', idToken, body, formData } = {}) {
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      ...(formData ? {} : { 'Content-Type': 'application/json' }),
       ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: formData || (body !== undefined ? JSON.stringify(body) : undefined),
   });
 
   if (res.status === 204) return null;
@@ -117,4 +120,66 @@ export function updateTask(idToken, taskId, payload) {
 
 export function deleteTask(idToken, taskId) {
   return request(`/tasks/${taskId}`, { method: 'DELETE', idToken });
+}
+
+// --- Attachments (US9) ---
+
+export function listAttachments(idToken, taskId) {
+  return request(`/tasks/${taskId}/attachments`, { idToken });
+}
+
+export function createLinkAttachment(idToken, taskId, { title, url }) {
+  return request(`/tasks/${taskId}/attachments`, {
+    method: 'POST',
+    idToken,
+    body: { kind: 'link', title, url },
+  });
+}
+
+export function createNoteAttachment(idToken, taskId, { body }) {
+  return request(`/tasks/${taskId}/attachments`, {
+    method: 'POST',
+    idToken,
+    body: { kind: 'note', body },
+  });
+}
+
+// Multipart upload — the file's bytes go straight to the BE (never to
+// storage directly from the browser), which then proxies the PutObject call
+// server-side (see backend/src/lib/storage.js).
+export function uploadFileAttachment(idToken, taskId, file) {
+  const formData = new FormData();
+  formData.append('kind', 'file');
+  formData.append('file', file);
+  return request(`/tasks/${taskId}/attachments`, { method: 'POST', idToken, formData });
+}
+
+export function deleteAttachment(idToken, taskId, attachmentId) {
+  return request(`/tasks/${taskId}/attachments/${attachmentId}`, { method: 'DELETE', idToken });
+}
+
+// --- Time entries (US10-US12) ---
+
+export function listTimeEntries(idToken, taskId) {
+  return request(`/tasks/${taskId}/time-entries`, { idToken });
+}
+
+export function startTimer(idToken, taskId) {
+  return request(`/tasks/${taskId}/time-entries/start`, { method: 'POST', idToken });
+}
+
+export function stopTimer(idToken, taskId, { note } = {}) {
+  return request(`/tasks/${taskId}/time-entries/stop`, { method: 'POST', idToken, body: { note } });
+}
+
+export function createManualTimeEntry(idToken, taskId, { minutes, note }) {
+  return request(`/tasks/${taskId}/time-entries`, { method: 'POST', idToken, body: { minutes, note } });
+}
+
+export function updateTimeEntry(idToken, taskId, entryId, payload) {
+  return request(`/tasks/${taskId}/time-entries/${entryId}`, { method: 'PATCH', idToken, body: payload });
+}
+
+export function deleteTimeEntry(idToken, taskId, entryId) {
+  return request(`/tasks/${taskId}/time-entries/${entryId}`, { method: 'DELETE', idToken });
 }

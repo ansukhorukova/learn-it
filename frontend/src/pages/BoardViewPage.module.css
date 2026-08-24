@@ -187,11 +187,36 @@
   line-height: 1.4;
 }
 
+.cardBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.attachmentBadge,
+.timeBadge {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 .cardControls {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+.openButton {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
 }
 
 .statusSelect {

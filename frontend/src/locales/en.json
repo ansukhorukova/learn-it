@@ -87,7 +87,9 @@
         "one": "{count} task",
         "other": "{count} tasks"
       },
-      "totalTimePlaceholder": "—",
+      "totalTime": "Total: {duration}",
+      "thisWeek": "This week: {duration}",
+      "noTimeYet": "No time logged yet",
       "rename": "Rename",
       "delete": "Delete"
     },
@@ -137,11 +139,104 @@
         "titleTooLong": "Task title must be 200 characters or fewer"
       }
     },
+    "rename": {
+      "cta": "Rename",
+      "titleLabel": "Title",
+      "validation": {
+        "titleRequired": "Task title is required",
+        "titleTooLong": "Task title must be 200 characters or fewer"
+      }
+    },
     "delete": {
       "cta": "Delete",
       "confirmTitle": "Delete task?",
       "confirmMessage": "This will permanently delete \"{title}\". This cannot be undone.",
       "confirmButton": "Delete task"
+    },
+    "card": {
+      "open": "Open",
+      "attachmentCount": {
+        "one": "{count} attachment",
+        "other": "{count} attachments"
+      },
+      "timeBadge": "{duration}"
+    }
+  },
+  "attachment": {
+    "panel": {
+      "title": "Attachments",
+      "close": "Close",
+      "loading": "Loading attachments…",
+      "empty": "No attachments yet."
+    },
+    "group": {
+      "files": "Files",
+      "links": "Links",
+      "notes": "Notes"
+    },
+    "add": {
+      "file": "Add file",
+      "link": "Add link",
+      "note": "Add note"
+    },
+    "file": {
+      "chooseLabel": "Choose a file",
+      "uploading": "Uploading…",
+      "hint": "Images, PDF, Word documents, or plain text — up to 25MB."
+    },
+    "link": {
+      "titleLabel": "Title",
+      "titlePlaceholder": "Link title",
+      "urlLabel": "URL",
+      "urlPlaceholder": "https://example.com",
+      "submit": "Add link",
+      "saving": "Adding…"
+    },
+    "note": {
+      "bodyLabel": "Note",
+      "bodyPlaceholder": "Write a short note…",
+      "submit": "Add note",
+      "saving": "Adding…"
+    },
+    "delete": {
+      "cta": "Delete",
+      "confirmTitle": "Delete attachment?",
+      "confirmMessage": "This will permanently delete this attachment. This cannot be undone.",
+      "confirmButton": "Delete attachment"
+    }
+  },
+  "timeEntry": {
+    "section": {
+      "title": "Time"
+    },
+    "timer": {
+      "start": "Start timer",
+      "stop": "Stop timer",
+      "running": "Running — {duration}",
+      "switchedNotice": "Started this timer — stopped the one running on another task.",
+      "stopNoteLabel": "Note (optional)"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "empty": "No sessions logged yet",
+      "total": "Total: {duration}"
+    },
+    "manual": {
+      "cta": "Add time manually",
+      "minutesLabel": "Minutes",
+      "notePlaceholder": "Add a note (optional)",
+      "submit": "Add entry",
+      "saving": "Adding…"
+    },
+    "edit": {
+      "cta": "Edit",
+      "submit": "Save changes"
+    },
+    "delete": {
+      "cta": "Delete",
+      "confirmTitle": "Delete this entry?",
+      "confirmMessage": "This will permanently delete this time entry. This cannot be undone.",
+      "confirmButton": "Delete entry"
     }
   },
   "errors": {
@@ -165,6 +260,36 @@
       "invalidStatus": "Invalid task status.",
       "positionConflict": "This board changed while you were working. Please try again."
     },
+    "attachment": {
+      "notFound": "Attachment not found.",
+      "invalidKind": "Invalid attachment type.",
+      "titleRequired": "Link title is required.",
+      "titleTooLong": "Link title must be 200 characters or fewer.",
+      "urlRequired": "URL is required.",
+      "urlTooLong": "URL must be 2000 characters or fewer.",
+      "urlInvalid": "Enter a valid URL starting with http:// or https://.",
+      "noteBodyRequired": "Note text is required.",
+      "noteBodyTooLong": "Note text must be 2000 characters or fewer.",
+      "fileRequired": "Choose a file to upload.",
+      "invalidFileType": "This file type isn't supported.",
+      "fileTooLarge": "File is too large. Maximum size is 25MB.",
+      "uploadFailed": "File upload failed. Please try again."
+    },
+    "timeEntry": {
+      "noActiveTimer": "No timer is running on this task.",
+      "startConflict": "Couldn't start the timer due to a conflicting request. Please try again.",
+      "minutesInvalid": "Enter a whole number of minutes greater than 0.",
+      "minutesTooLarge": "A single entry can't exceed 24 hours (1440 minutes).",
+      "noteTooLong": "Note must be 500 characters or fewer.",
+      "notFound": "Time entry not found."
+    },
     "generic": "Something went wrong. Please try again."
+  },
+  "time": {
+    "unit": {
+      "hoursMinutes": "{hours}h {minutes}m",
+      "minutes": "{minutes}m",
+      "hours": "{hours}h"
+    }
   }
 }
