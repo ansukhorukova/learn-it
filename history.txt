@@ -429,3 +429,53 @@ PROJECT_MAP.md — історія змін
     DB_Users) замість попередніх placeholder-ів, дата лишена 2026-08-24.
   Коміт: docs: update PROJECT_MAP.md — перемикач мови EN/UK у AppHeader
     (AUTH-008) позначено done, FE_ProfilePage доведено до done
+
+2026-08-25 — Коментарі до таски (US-019), оцінений час (US-020),
+  bug fix розгортання нотатки (US-018): done
+  Підсумок від fullstack-developer (коміт 85ae7e5) + tester (PASS with
+    notes — 24 AC через кодове рев'ю + BE test suite 55/55 + прямі API
+    auth-перевірки; живий браузерний клік не перевірено — заблоковано
+    sandbox-класифікатором середовища при спробі тестової автентифікації,
+    не баг коду) + code-reviewer (Approve with comments, два non-blocker
+    зауваження — застаріле локальне state форми при перемиканні таски
+    без remount панелі, пре-існуючий патерн, тепер поширений і на нові
+    поля; непов'язані transitive npm audit вразливості в firebase-admin):
+    - US-018 (bug fix у вже done FE_Attachments): чіп нотатки тепер
+      розгортається/згортається по кліку замість обрізання без способу
+      прочитати повністю. Presentation-only, BE й схема не чіпались —
+      body вже повністю зберігався й повертався API з US-009.
+    - US-019 (нова фіча, свідома зміна scope — "коментарі/обговорення"
+      прибрано з CLAUDE.md "Поза межами цього етапу"): нова секція
+      "Коментарі" в TaskPanel, нова таблиця task_comments (task_id FK
+      CASCADE на tasks, author_id FK на users, body, created_at, індекс
+      на task_id+created_at), нові ендпоінти GET/POST
+      /api/v1/tasks/:id/comments. Коментарі спільні для всіх з доступом
+      до таски (owner/collaborator/viewer читають, тільки
+      owner/collaborator пишуть) — на відміну від приватних time_entries.
+      MVP без edit/delete.
+    - US-020 (нова фіча): нова колонка tasks.planned_minutes (nullable
+      int), розширення PATCH /api/v1/tasks/:id полем plannedMinutes,
+      розширення GET /tasks/:id і GET /boards/:id/tasks тим самим полем.
+      UI: форма Години+Хвилини в секції "Час" TaskPanel, рядок
+      "Оцінено/Залоговано", badge на картці таски в Board view.
+  Додано нові вузли (Рядок 3 — Task panel/Attachments/Team view):
+    BE_TaskComments — 🟩 done, GET+POST /tasks/:id/comments; DB_TaskComments
+    — 🟩 done, таблиця task_comments. З'єднання: FE_TaskPanel -->
+    BE_TaskComments --> DB_TaskComments, розміщені поруч з гілкою
+    BE_Attachments/DB_Attachments за тим самим структурним принципом.
+  Оновлено схему БД: новий вузол DB_TaskComments (FK CASCADE на
+    DB_Tasks, FK на DB_Users) у верхньому ряді junction-таблиць поруч
+    з DB_TaskShares; лейбл DB_Tasks доповнено новою колонкою
+    planned_minutes.
+  Не додано нового вузла: planned_minutes (US-020) — розширення вже
+    done-вузлів BE_Tasks/DB_Tasks, той самий принцип, що й попередні
+    розширення контракту (тотали, myRole, шеринг, опис).
+  Позначено текстом у "Примітки" (без зміни статусу вузла): FE_Attachments
+    — US-018 bug fix всередині вже done-вузла.
+  Нових "відомих прогалин" не залоговано — обидва зауваження рев'юера
+    non-blocking, зафіксовані текстом у "Примітки" для прозорості.
+  USER_STORIES.md: US-018, US-019, US-020 переведено з "🔧 У розробці"
+    на "✅ Готово (пройшло code review)", дата лишена 2026-08-25.
+  Коміт: docs: update PROJECT_MAP.md — коментарі до таски (US-019) та
+    оцінений час (US-020), фікс розгортання нотатки (US-018)
+    (AUTH-008) позначено done, FE_ProfilePage доведено до done

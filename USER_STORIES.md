@@ -31,9 +31,9 @@
 | AUTH-006 | Довільна компетенція вручну (custom competency) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_UserCompetencies |
 | AUTH-007 | Перемикач готовності викладати (per-competency) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_UserCompetencies |
 | AUTH-008 | Перемикач мови (EN/UK) у верхньому меню | ✅ Готово (пройшло code review) | 2026-08-24 | FE_AppHeader, FE_i18n, FE_ProfilePage, BE_UsersMe, DB_Users |
-| US-018 | Bug fix: розгортання повного тексту вкладення-нотатки | 🔧 У розробці | 2026-08-25 | FE_Attachments |
-| US-019 | Коментарі до таски | 🔧 У розробці | 2026-08-25 | FE_TaskPanel, BE_TaskComments, DB_TaskComments |
-| US-020 | Оцінений (запланований) час на тасці | 🔧 У розробці | 2026-08-25 | FE_TaskPanel, FE_BoardView, BE_Tasks, DB_Tasks |
+| US-018 | Bug fix: розгортання повного тексту вкладення-нотатки | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Attachments |
+| US-019 | Коментарі до таски | ✅ Готово (пройшло code review) | 2026-08-25 | FE_TaskPanel, BE_TaskComments, DB_TaskComments |
+| US-020 | Оцінений (запланований) час на тасці | ✅ Готово (пройшло code review) | 2026-08-25 | FE_TaskPanel, FE_BoardView, BE_Tasks, DB_Tasks |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---

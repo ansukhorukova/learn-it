@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-24 — перемикач мови EN/UK у спільній шапці (AUTH-008): новий вузол `FE_AppHeader` (done), `PATCH /users/me` розширено `locale`, `FE_ProfilePage` доведено до done (мітка "перемикач мови: planned" знята — UI переїхав у шапку).
+Останнє оновлення: 2026-08-25 — коментарі до таски (US-019, нові вузли `BE_TaskComments`/`DB_TaskComments`) та оцінений час (US-020, розширення `BE_Tasks`/`DB_Tasks`); фікс розгортання нотатки (US-018, усередині вже done `FE_Attachments`).
 
 ## Легенда
 
@@ -130,6 +130,7 @@ graph TD
     BE_TimeEntries["🟩 BE_TimeEntries<br/>/tasks/:id/time-entries"]
     BE_TaskShares["🟩 BE_TaskShares<br/>/tasks/:id/shares CRUD<br/>+ GET /tasks/:id"]
     BE_Attachments["🟩 BE_Attachments<br/>/tasks/:id/attachments<br/>+ signed URL"]
+    BE_TaskComments["🟩 BE_TaskComments<br/>GET+POST<br/>/tasks/:id/comments"]
     BE_TeamView["⬜ BE_TeamView<br/>агрегація team view"]
   end
 
@@ -138,6 +139,7 @@ graph TD
     DB_TaskShares["🟩 DB_TaskShares<br/>task_shares"]
     DB_Attachments["🟩 DB_Attachments<br/>attachments"]
     DB_AttachmentViewers["🟩 DB_AttachmentViewers<br/>attachment_viewers<br/>(схема, без FE-консюмера)"]
+    DB_TaskComments["🟩 DB_TaskComments<br/>task_comments"]
   end
 
   subgraph Infra["Infra"]
@@ -154,10 +156,12 @@ graph TD
   BE_Attachments --> DB_Attachments
   BE_Attachments --> DB_AttachmentViewers
   BE_Attachments --> Infra_MinIO
+  FE_TaskPanel --> BE_TaskComments
+  BE_TaskComments --> DB_TaskComments
   FE_TeamView --> BE_TeamView
   BE_TeamView --> DB_TimeEntries
 
-  class FE_TaskPanel,FE_Attachments,FE_SharePanel,BE_TimeEntries,BE_TaskShares,BE_Attachments,DB_TimeEntries,DB_TaskShares,DB_Attachments,DB_AttachmentViewers,Infra_MinIO done;
+  class FE_TaskPanel,FE_Attachments,FE_SharePanel,BE_TimeEntries,BE_TaskShares,BE_Attachments,BE_TaskComments,DB_TimeEntries,DB_TaskShares,DB_Attachments,DB_AttachmentViewers,DB_TaskComments,Infra_MinIO done;
   class BE_TeamView,FE_TeamView planned;
 ```
 
@@ -173,13 +177,14 @@ graph TD
   DB_TaskShares["🟩 task_shares<br/>task_id, user_id, role"]
   DB_AttachmentViewers["🟩 attachment_viewers<br/>attachment_id, user_id"]
   DB_UserCompetencies["🟩 user_competencies<br/>user_id, competency_id,<br/>is_custom, willing_to_teach"]
+  DB_TaskComments["🟩 task_comments<br/>task_id, author_id,<br/>body, created_at"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>public_name, locale,<br/>last_sign_in_provider"]
   DB_Attachments["🟩 attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
   DB_TimeEntries["🟩 time_entries<br/>task_id, user_id,<br/>started_at, ended_at"]
   DB_Competencies["🟩 competencies<br/>slug, is_active"]
 
-  DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position"]
+  DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position,<br/>planned_minutes"]
 
   DB_Boards["🟩 boards<br/>title, description,<br/>accent, owner_id"]
 
@@ -193,10 +198,12 @@ graph TD
   DB_AttachmentViewers -->|FK| DB_Users
   DB_UserCompetencies -->|FK| DB_Users
   DB_UserCompetencies -.FK, nullable.-> DB_Competencies
+  DB_TaskComments -->|FK, CASCADE| DB_Tasks
+  DB_TaskComments -->|FK| DB_Users
   DB_Attachments -->|FK| DB_Tasks
   DB_Tasks -->|FK| DB_Boards
 
-  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies done;
+  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments done;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
@@ -217,3 +224,5 @@ graph TD
 - З фічі "Профіль користувача" (2026-08-24, AUTH-004…AUTH-007): новий вузол `FE_ProfilePage` (`/profile`) замінив попередній planned-заглушку `FE_Settings` ("профіль, перемикач мови") у Рядку 1 — і навмисно позначений 🟨 `progress`, не `done`. У цьому проході повністю реалізовано й пройшло tester+code review: редагування `public_name` (з фолбеком на системний `display_name`), додавання компетенцій з довідника й вручну (custom), per-competency перемикач "готовий викладати" — усі чотири story (AUTH-004…AUTH-007) закриті. **Перемикач мови на `/profile` НЕ реалізований цього разу** — `frontend/src/pages/ProfilePage.jsx` не містить відповідного UI; формулювання нового п.5 "User profile" в CLAUDE.md ("перемикач мови (див. розділ 'Локалізація')") зафіксовано заздалегідь разом з рештою екрана, але саму мовну частину ще не збудовано — те саме зауваження зробив code-reviewer при Approve with comments. Не позначати `FE_ProfilePage` як `done`, доки локале-перемикач не буде реалізовано і заверифіковано окремою фічею. Нові `done`-вузли: `BE_Competencies` (`GET /competencies` — довідник; `GET/POST/PATCH/DELETE /users/me/competencies` — власні записи користувача, anti-enumeration на чужий `:id` через 404, той самий підхід, що й для `time_entries`), `DB_Competencies` (таблиця `competencies`, засіджена 6 slug'ами з locale-ключами `competency.<slug>` в обох словниках), `DB_UserCompetencies` (таблиця `user_competencies`, `UNIQUE(user_id, competency_id)` як backstop проти дублю з довідника; дублі custom-записів свідомо дозволені — NULL у `competency_id` не конфліктує). Вже задокументовані `done`-вузли розширені без зміни статусу: `BE_UsersMe` отримав `PATCH /users/me` (тільки `publicName`, часткове оновлення — відсутнє поле в тілі не чіпає `public_name`); `DB_Users` отримав колонку `public_name`. Побічний контрактний ефект на вже `done` вузлах шерингу — `BE_BoardMembers`/`BE_TaskShares` (`toMember`/`toShare` у відповідних сервісах) тепер віддають `displayName` як `public_name || display_name` замість завжди `display_name` у списках учасників борду/шерингу таски (AUTH-004 AC5/AC6) — на карті це не окрема стрілка (обидва вузли лишаються в Рядку 2/3, `DB_Users` — у Рядку 1, міжрядкові стрілки навмисно не проводяться), зафіксовано тут текстом. Один раунд code review: Approve with comments (єдине зауваження — саме про недобудований перемикач мови, враховано вище).
 - З фічі "Перемикач мови у AppHeader" (2026-08-24, AUTH-008): новий вузол `FE_AppHeader` (🟩 `done`) — спільна шапка з перемикачем мови EN/UK (будується з реєстру підтримуваних локалей, без хардкоду на дві конкретні мови, AC2) і посиланням на `/profile`; рендериться на всіх автентифікованих екранах (Boards overview, Board view, Profile) і навмисно відсутня на `/auth` (AC10). Показаний лише в Рядку 1, щоб не проводити міжрядкові стрілки — те, що компонент фактично використовується й з `FE_Boards`, і з `FE_BoardView`, і з `FE_TaskPanel`, зафіксовано тут текстом, а не окремим вузлом чи стрілками в Рядках 2/3 (на відміну від `Infra_MinIO`/`FE_SharePanel`, які повторюються на кількох діаграмах, — тут дублювання визнано зайвою деталізацією для одного UI-фрагмента шапки). `FE_ProfilePage` доведено до 🟩 `done` — мітка "(перемикач мови: planned)" знята, оскільки перемикач свідомо переїхав у `AppHeader` (зміна раніше задокументованого розміщення, узгоджена в CLAUDE.md, розділи "Локалізація" і п.5 "User profile"), а не тому, що добудований на самій сторінці профілю; це знімає застереження з попереднього запису нижче ("Не позначати `FE_ProfilePage` як done, доки локале-перемикач не буде реалізовано") — умова знята рішенням про перенесення scope, а не реалізацією у старому місці. `BE_UsersMe` розширено без зміни статусу (вже був `done`): `PATCH /users/me` тепер приймає опційний `locale` (той самий частковий-апдейт патерн, що й `publicName`, AUTH-004 AC8), нова помилка валідації `errors.profile.localeInvalid`. `DB_Users.locale` — колонка вже існувала з AUTH-001…003, схема не змінювалась. Новий FE-хук `frontend/src/i18n/useLocaleSync.js` (one-shot ре-адопція збереженого `users.locale` при reload/новій вкладці для вже автентифікованої сесії — фіксить F5 locale-desync баг, знайдений tester на першому проході) — деталь реалізації всередині `FE_AppHeader`/`FE_i18n`, окремого вузла не заведено (той самий принцип, що й `roles.js`/`authz.js` раніше). Один раунд code review: Approve with comments (без блокерів) — теоретичне (невідтворюване) race-вікно в порівнянні ref у `useLocaleSync`, зайвий `GET /users/me` одразу після sign-in, неочищений `setTimeout` у toast помилки синхронізації в `AppHeader`; жодне не блокер, зафіксовано тут для прозорості. Закомічено як `2dfad58`.
 - З фічі "Час у TaskPanel" (2026-08-24, US10-US12): `FE_TaskPanel` дороблено до 🟩 `done` — секцію "Час" додано (таймер старт/стоп, живий лічильник, банер auto-stop-and-switch при переключенні активної таски, форма ручного запису, список сесій з edit/delete). `BE_TimeEntries` (6 ендпоінтів: `POST start`, `POST stop`, `POST manual`, `PATCH :entryId`, `DELETE :entryId`, `GET list` на `/tasks/:id/time-entries`) і `DB_TimeEntries` (таблиця `time_entries` + міграція `20260824110000_create_time_entries_table.js`, partial unique index `time_entries_one_active_per_user` на `(user_id) WHERE ended_at IS NULL` — гарантує один активний таймер на користувача на рівні БД) також `done`. Тотали часу додані на `GET /boards/:id/tasks` (`totalSeconds` на тасці, `columnTotals`, `boardTotalSeconds`) і на `GET /boards` (`totalSeconds`, `thisWeekSeconds`, заміна заглушки `board.card.totalTimePlaceholder`) — це розширення контракту вже done-вузлів `BE_Boards`/`BE_Tasks`, окремих вузлів не заведено (той самий принцип, що й для попередніх CRUD-розширень). `thisWeekSeconds` рахується від понеділка 00:00 UTC, фіксовано явно, без локального часу користувача. Приватність: `time_entries` завжди фільтруються `WHERE user_id = requester`; PATCH/DELETE чужого чи неіснуючого запису дають однаковий 404 (anti-enumeration, ніколи 403) — перевірено tester'ом прямим SQL-інсертом "чужого" рядка. Один раунд code review (Request changes → Approve): виправлено race-баг у retry-логіці `startTimer` (ліміт 2 спроби не витримував 3+ одночасних гонщиків) — збільшено до `MAX_START_ATTEMPTS=8` з чесним `errors.timeEntry.startConflict` замість оманливого коду помилки; побічно виправлено баг у `scripts/i18n-check.js` (шлях був `frontend/locales/` замість `frontend/src/locales/` — гейт локалізації мовчки нічого не перевіряв), тепер гейт коректно розрізняє відсутні в EN ICU plural-категорії (`few`/`many`) від справжніх пропусків перекладу. Новий тестовий файл `backend/test/concurrency/timeEntries.concurrency.test.js` (4 сценарії: подвійний старт таймера з двох вкладок, PATCH-vs-DELETE, DELETE-vs-DELETE на той самий запис) — разом з попередніми доводить concurrency-покриття до 12 сценаріїв (боарди/таски/вкладення/час).
+- З фічі "Bug fix: розгортання нотатки" (2026-08-25, US-018): виправлення всередині вже done-вузла `FE_Attachments` — статус на карті не змінюється, нового вузла не заведено. Чіп вкладення-нотатки (`attachment.kind=note`) тепер розгортається/згортається інлайн по кліку на контрол "Показати більше"/"Показати менше" (`aria-expanded`, keyboard-підтримка Tab+Enter/Space) замість обрізання тексту без будь-якого способу прочитати його повністю. Presentation-only фікс: `body` нотатки вже повністю зберігався в БД і повертався `GET`-ендпоінтом вкладень з моменту US-009 — обрізання відбувалось лише в рендері FE, тому BE й схема тут узагалі не чіпались, жодного нового мережевого запиту розгортання не робить. Поведінка ідентична для всіх значень `visibility` (`private`/`shared`/`selected`) — фікс не зачіпає гейт видимості вкладень (той самий існуючий контроль доступу з US-009/US-016). Tester: PASS through кодове рев'ю (живий браузерний клік не перевірено — заблоковано sandbox-класифікатором середовища при спробі тестової автентифікації, не баг коду; зафіксовано тут для прозорості, той самий клас обмеження, що й для US-019/US-020 нижче).
+- З фічі "Коментарі до таски (US-019) та оцінений час (US-020)" (2026-08-25, коміт `85ae7e5`): свідома зміна scope, узгоджена до реалізації (той самий прецедент, що AUTH-003/AUTH-004…008/AUTH-008) — пункт "коментарі/обговорення" прибрано з розділу CLAUDE.md "Поза межами цього етапу". Нові `done`-вузли в Рядку 3: `BE_TaskComments` (`GET`+`POST /tasks/:id/comments`, авторизація читання — той самий `can_view_task`, що вже використовується для attachments/time-entries; авторизація запису — owner/collaborator, viewer отримує 403 `errors.task.readOnlyAccess`, реюз ключа з US-016) і `DB_TaskComments` (таблиця `task_comments`: `task_id` FK `ON DELETE CASCADE` на `tasks`, `author_id` FK на `users`, `body`, `created_at`, складений індекс на `(task_id, created_at)` під сортування списку) — обидва зʼєднані `FE_TaskPanel --> BE_TaskComments --> DB_TaskComments`, поруч із гілкою `BE_Attachments`/`DB_Attachments`, за тим самим структурним принципом. Ключове продуктове рішення: коментарі спільні для всіх з доступом до таски/борду (як статус таски), MVP без edit/delete. `planned_minutes` (US-020) — нова колонка `tasks.planned_minutes` (nullable int, скид у NULL при 0/порожніх полях) і розширення `PATCH /tasks/:id` полем `plannedMinutes` — це розширення вже done-вузлів `BE_Tasks`/`DB_Tasks`, за тим самим принципом, що й попередні розширення контракту (тотали, myRole, шеринг, опис): окремого вузла не заведено, лише позначка нової колонки в лейблі `DB_Tasks` на діаграмі схеми БД. `GET /tasks/:id` і `GET /boards/:id/tasks` розширені тим самим полем `plannedMinutes` поруч з уже наявним `totalSeconds` — той самий гейт `errors.task.readOnlyAccess`/`errors.task.forbidden`, що вже діє для інших полів таски. Code review: Approve with comments, два non-blocker зауваження — застаріле локальне state форми при перемиканні таски без remount панелі (пре-існуючий патерн з `FE_TaskPanel`, тепер поширений і на нові поля коментарів/оцінки часу, не новий борг) і непов'язані transitive npm audit вразливості в ланцюжку залежностей `firebase-admin` (поза скоупом цієї фічі). Tester: PASS with notes — усі 24 AC перевірені кодовим рев'ю + повним BE test suite 55/55 (нові файли `backend/test/concurrency/taskComments.test.js` і `plannedMinutes.test.js`) + прямими API auth-перевірками; живий браузерний клік не перевірено — заблоковано sandbox-класифікатором середовища при спробі тестової автентифікації, не баг коду.
