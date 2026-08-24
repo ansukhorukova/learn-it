@@ -17,9 +17,14 @@ function AppHeader() {
       <Link to="/" className={styles.brand}>
         {t('app.name')}
       </Link>
-      <button type="button" className={styles.signOut} onClick={() => signOut(auth)}>
-        {t('home.signOut')}
-      </button>
+      <div className={styles.actions}>
+        <Link to="/profile" className={styles.navLink}>
+          {t('app.nav.profile')}
+        </Link>
+        <button type="button" className={styles.signOut} onClick={() => signOut(auth)}>
+          {t('home.signOut')}
+        </button>
+      </div>
     </header>
   );
 }

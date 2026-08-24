@@ -26,6 +26,10 @@
 | US-015 | Collaborator редагує вміст спільного борду | ✅ Готово (пройшло code review) | 2026-08-24 | BE_Tasks, BE_Attachments, BE_BoardMembers |
 | US-016 | Viewer має read-only доступ і приватний трекінг часу | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, BE_BoardMembers |
 | US-017 | Цілісність даних і edge cases шерингу | ✅ Готово (пройшло code review) | 2026-08-24 | BE_BoardMembers, BE_TaskShares, DB_BoardMembers, DB_TaskShares |
+| AUTH-004 | Перегляд/редагування профілю — публічне ім'я (public_name) | 🔧 У розробці | 2026-08-24 | BE_Users, FE_ProfilePage |
+| AUTH-005 | Додавання компетенцій з передвизначеного списку | 🔧 У розробці | 2026-08-24 | BE_Competencies, DB_Competencies, FE_ProfilePage |
+| AUTH-006 | Довільна компетенція вручну (custom competency) | 🔧 У розробці | 2026-08-24 | BE_Competencies, FE_ProfilePage |
+| AUTH-007 | Перемикач готовності викладати (per-competency) | 🔧 У розробці | 2026-08-24 | BE_Competencies, FE_ProfilePage |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
@@ -576,4 +580,123 @@ AC AUTH-001.3 ("email вже зареєстрований через Google") н
 
 ## Примітка щодо поточного стану
 US-013…US-017 позначені ✅ Готово (2026-08-24): пройшли повний цикл fullstack-developer → tester (2 раунди, обидва фінально PASS) → code-reviewer (2 раунди — перший Request changes через reindex-leak, другий Approve, закомічено як `02de849`) → map-keeper. `PROJECT_MAP.md` оновлено відповідно.
+```
+
+**AUTH-004…AUTH-007 — походження.** Ці чотири stories виникли із запиту користувача створити профіль користувача з публічним ім'ям, компетенціями (з передвизначеного списку або введеними вручну) і перемикачем готовності викладати обрані компетенції. На момент запиту CLAUDE.md узагалі не описував профіль користувача як екран, і схема `users` не мала полів під це — свідоме розширення scope, узгоджене до реалізації (той самий прецедент, що й AUTH-003 для Google-входу): CLAUDE.md оновлено одночасно з фіксацією цих stories (розділи "Екрани" — новий п.5 "User profile"; "Дані" — `users.public_name`, нові таблиці `competencies`/`user_competencies`). Перед розбиттям на окремі stories ухвалено чотири продуктові рішення:
+1. **`public_name` — нове окреме поле в `users`, не редагування наявного `display_name`.** `display_name` за вже реалізованим і затестованим контрактом AUTH-001…003 системний і незмінний після створення (береться з Google-профілю/email і "надалі не перезаписується при повторних входах"). Зробити його редагованим означало б зламати цей інваріант заднім числом. Натомість `public_name` — опційне поле, яке користувач редагує напряму з екрана профілю; FE показує його замість `display_name` скрізь, де мене бачить інший користувач (списки учасників борду, шеринг), з фолбеком на `display_name`, якщо `public_name` не задане.
+2. **Компетенції — довідник у БД (`competencies`), не хардкод-список у коді FE/BE.** Список професій/навичок буде рости й потребує адміністрування окремо від релізів коду. Кожен запис має стабільний `slug`, а відображувана назва — locale-ключ `competency.<slug>` в `en.json`/`uk.json`, за тим самим патерном, що вже застосований до лейблів колонок статусу таски (`boardView.column.*`) — це узгоджується з вимогами CLAUDE.md "ніде в коді не повинно бути мовно-специфічної логіки" і "ключі перекладів — за змістом", а не з ідеєю зберігати білінгвальний текст прямо в рядку довідника.
+3. **Довільна компетенція (custom) — вільний текст, без автоматичного запису в довідник `competencies`.** Зберігається як є в `user_competencies.custom_label`, не перекладається — так само, як назва борду чи таски (user-generated контент, не UI-рядок). Поповнення офіційного довідника `competencies` новими slug'ами — окремий адміністративний процес поза цим проходом, не автоматика з введеного тексту.
+4. **Готовність викладати — прапорець на рівні кожної обраної компетенції, не один загальний перемикач на профіль.** Формулювання запиту ("перемикач, чи готовий користувач бути вчителем **з обраних компетенцій**") прямо вказує на прив'язку до конкретної компетенції, тож `willing_to_teach` — булеве поле на рядку `user_competencies`, не на `users`. Директорія/пошук вчителів за компетенціями свідомо не входить у цей прохід — лише збереження й показ прапорця у власному профілі.
+
+### AUTH-004 — Перегляд/редагування профілю — публічне ім'я (public_name)
+
+```
+## User Story
+Як зареєстрований користувач, я хочу переглянути й відредагувати своє публічне ім'я на екрані профілю, щоб контролювати, яке ім'я бачать інші учасники спільних бордів — незалежно від системного імені, згенерованого при реєстрації.
+
+## Acceptance Criteria
+1. Given я авторизований, When відкриваю `/profile`, Then бачу поле "Публічне ім'я" з поточним значенням `public_name` (порожнє, якщо не задане) і поруч — `display_name` як read-only довідкове значення з поясненням, що воно не редагується.
+2. Given валідне ім'я (1–100 символів після trim), When натискаю "Зберегти", Then `PATCH /api/v1/users/me` оновлює `public_name`, форма показує підтвердження збереження.
+3. Given я очищаю поле повністю й зберігаю, Then `public_name` встановлюється в NULL (свідомий скид до фолбеку на `display_name`) — не помилка валідації.
+4. Given ім'я довше за 100 символів, When зберігаю, Then 400 `errors.profile.publicNameTooLong`, запит не проходить.
+5. Given `public_name` не задане (NULL), When інший користувач бачить мене в списку учасників борду (`sharing.board.manageAccess` з US-013) або в шерингу таски, Then показується `display_name`.
+6. Given `public_name` задане, When інший користувач бачить мене в тих самих контекстах, Then показується `public_name`, не `display_name`.
+7. Given неавторизований запит, When `GET`/`PATCH /api/v1/users/me`, Then 401 (та сама гарантія, що вже діє для існуючого `GET /users/me`).
+8. Given `PATCH` викликається без поля `public_name` у тілі (напр. запит оновлює лише `locale`), Then `public_name` лишається незмінним — часткове оновлення, не заміна всього профілю.
+
+## Локалізація
+- `profile.title` — en: "Profile", uk: "Профіль"
+- `profile.publicName.label` — en: "Public name", uk: "Публічне ім'я"
+- `profile.publicName.placeholder` — en: "How others see you on shared boards", uk: "Як вас бачать інші на спільних бордах"
+- `profile.publicName.hint` — en: "Shown to people you share boards or tasks with, instead of your account name.", uk: "Показується людям, з якими ви ділитесь бордами чи тасками, замість імені акаунту."
+- `profile.displayName.readonlyLabel` — en: "Account name (not editable)", uk: "Ім'я акаунту (не редагується)"
+- `profile.save.cta` / `.saving` / `.saved` — en: "Save" / "Saving…" / "Saved", uk: "Зберегти" / "Збереження…" / "Збережено"
+- `errors.profile.publicNameTooLong` — en: "Public name must be 100 characters or fewer.", uk: "Публічне ім'я має містити не більше 100 символів."
+
+## Відповідність scope
+Виходить за межі початкового CLAUDE.md на момент запиту — свідоме розширення, узгоджене до реалізації (прецедент AUTH-003). CLAUDE.md оновлено: `users.public_name` додано до розділу "Дані", `/profile` додано до "Екрани" як новий п.5. Не суперечить розділу "Поза межами цього етапу" — жоден пункт звідти не зачіпається.
+```
+
+### AUTH-005 — Додавання компетенцій з передвизначеного списку
+
+```
+## User Story
+Як зареєстрований користувач, я хочу додати до свого профілю одну чи кілька компетенцій із запропонованого списку (напр. "Математик", "Бізнес-аналітик", "Розробник Java"), щоб показати, у чому я розбираюсь.
+
+## Acceptance Criteria
+1. Given я на `/profile`, When відкриваю секцію "Компетенції", Then бачу список/мультиселект активних записів `competencies` (`is_active=true`), кожен підписаний через locale-ключ `competency.<slug>`.
+2. Given я обираю компетенцію зі списку, When натискаю "Додати", Then `POST /api/v1/users/me/competencies` `{competencyId}` створює `user_competencies(user_id, competency_id, is_custom=false, willing_to_teach=false)`, 201, компетенція одразу зʼявляється в моєму профілі.
+3. Given ця компетенція вже додана мною раніше, When намагаюсь додати ту саму `competencyId` повторно, Then 409 `errors.competency.alreadyAdded`, дубль не створюється.
+4. Given компетенція в моєму профілі, When натискаю "Прибрати", Then `DELETE /api/v1/users/me/competencies/:id`, 204, рядок видаляється (і, якщо `willing_to_teach` було true, прапорець зникає разом з рядком — не існує окремо від компетенції).
+5. Given `competencyId` не існує, When POST, Then 400 `errors.competency.notFound`.
+6. Given `competencyId` існує, але `is_active=false` (вивели з довідника), When POST, Then 400 `errors.competency.inactive` — не можна додати неактивну компетенцію (вже додані раніше неактивні лишаються видимими в профілі, без каскадного видалення).
+7. Given у мене додано ≥1 компетенцію, When секція рендериться, Then лічильник "Компетенції ({count})" — ICU plural.
+8. Given у мене немає жодної компетенції, When секція рендериться, Then порожній стан із закликом додати першу.
+
+## Локалізація
+- `profile.competencies.title` — en: "Competencies", uk: "Компетенції"
+- `profile.competencies.count` (ICU plural) — en: one "{count} competency" / other "{count} competencies"; uk: one "{count} компетенція" / few "{count} компетенції" / many "{count} компетенцій" / other "{count} компетенції"
+- `profile.competencies.empty` — en: "You haven't added any competencies yet.", uk: "Ви ще не додали жодної компетенції."
+- `profile.competencies.addCta` / `.removeCta` — en: "Add" / "Remove", uk: "Додати" / "Прибрати"
+- `profile.competencies.picker.placeholder` — en: "Choose a competency…", uk: "Оберіть компетенцію…"
+- `competency.mathematician` — en: "Mathematician", uk: "Математик"
+- `competency.business_analyst` — en: "Business Analyst", uk: "Бізнес-аналітик"
+- `competency.java_developer` — en: "Java Developer", uk: "Розробник Java"
+- `errors.competency.alreadyAdded` — en: "You've already added this competency.", uk: "Ви вже додали цю компетенцію."
+- `errors.competency.notFound` — en: "This competency doesn't exist.", uk: "Такої компетенції не існує."
+- `errors.competency.inactive` — en: "This competency is no longer available to add.", uk: "Цю компетенцію більше не можна додати."
+
+## Відповідність scope
+Виходить за межі початкового CLAUDE.md — свідоме розширення, узгоджене до реалізації разом з AUTH-004 (спільний абзац "походження" вище). CLAUDE.md оновлено: таблиця `competencies` додана до розділу "Дані". Початковий сід довідника (`mathematician`/`business_analyst`/`java_developer` — приклади з запиту користувача, розширюваний список) — частина міграції, не хардкод у коді застосунку.
+```
+
+### AUTH-006 — Довільна компетенція вручну (custom competency)
+
+```
+## User Story
+Як зареєстрований користувач, я хочу ввести свою компетенцію вручну, якщо потрібної немає в передвизначеному списку, щоб точно описати свою експертизу.
+
+## Acceptance Criteria
+1. Given потрібної компетенції немає в списку, When обираю опцію "Інше" в піклері й вводжу текст, Then `POST /api/v1/users/me/competencies` `{customLabel}` (без `competencyId`) створює `user_competencies(is_custom=true, custom_label=trim(text), willing_to_teach=false)`, 201.
+2. Given `customLabel` порожній або складається лише з пробілів, When POST, Then 400 `errors.competency.customLabelRequired`.
+3. Given `customLabel` довший за 100 символів, When POST, Then 400 `errors.competency.customLabelTooLong`.
+4. Given custom-компетенція відображається в профілі, Then показується рівно введений користувачем текст, без спроби перекладу чи прогону через `competency.<slug>` — це user-generated контент, не UI-рядок.
+5. Given в тілі запиту передані одночасно і `competencyId`, і `customLabel` (або жодного з двох), When POST, Then 400 `errors.competency.invalidPayload` — рівно одне з двох поле має бути заповнене.
+6. Given custom-компетенція додана, When видаляю, Then той самий `DELETE /api/v1/users/me/competencies/:id`, що й для компетенцій з довідника (AUTH-005.4) — єдиний ендпоінт видалення для обох видів.
+7. Given я додаю кілька custom-компетенцій з однаковим (або по-різному капіталізованим) текстом, When POST повторно, Then дублікат дозволений — вільний текст свідомо не унікалізується (на відміну від `competencyId` з AUTH-005.3), бо різні користувачі й навіть один користувач можуть по-різному сформулювати те саме.
+
+## Локалізація
+- `profile.competencies.picker.customOption` — en: "Other (type your own)", uk: "Інше (введіть свою)"
+- `profile.competencies.custom.inputPlaceholder` — en: "e.g. Data visualization", uk: "напр. Візуалізація даних"
+- `errors.competency.customLabelRequired` — en: "Enter a competency.", uk: "Введіть компетенцію."
+- `errors.competency.customLabelTooLong` — en: "Competency must be 100 characters or fewer.", uk: "Компетенція має містити не більше 100 символів."
+- `errors.competency.invalidPayload` — en: "Choose a competency from the list or enter your own — not both.", uk: "Оберіть компетенцію зі списку або введіть свою — не обидва варіанти одночасно."
+
+## Відповідність scope
+Виходить за межі початкового CLAUDE.md — свідоме розширення, узгоджене до реалізації разом з AUTH-004/AUTH-005 (спільний абзац "походження" вище). Не суперечить розділу "Поза межами цього етапу". Рішення не переносити custom-текст автоматично в довідник `competencies` — свідомий вибір бізнес-аналітика (пункт 3 в абзаці "походження"), щоб довідник лишався контрольованим і locale-ready, а не засмічувався дублікатами вільного тексту.
+```
+
+### AUTH-007 — Перемикач готовності викладати (per-competency)
+
+```
+## User Story
+Як зареєстрований користувач із доданими компетенціями, я хочу позначити, з якої саме компетенції я готовий викладати як вчитель, щоб ця готовність була зафіксована окремо для кожного напрямку, а не для всього профілю разом.
+
+## Acceptance Criteria
+1. Given у мене є компетенція в списку профілю (з довідника або custom), When вмикаю перемикач "Готовий викладати" біля неї, Then `PATCH /api/v1/users/me/competencies/:id` `{willingToTeach:true}` оновлює `user_competencies.willing_to_teach`, 200.
+2. Given перемикач увімкнено, When вимикаю, Then `willing_to_teach` оновлюється в `false` — сама компетенція й далі лишається в профілі, видалення не відбувається.
+3. Given `:id` належить `user_competencies` іншого користувача, When я викликаю PATCH цього id, Then 404 `errors.competency.notFound` (не 403) — anti-enumeration, той самий підхід, що вже застосований до чужих `time_entries` (US-011.7) і до sign-in (AUTH-002.2).
+4. Given компетенція custom (`is_custom=true`), When вмикаю перемикач, Then дозволено так само, як для компетенції з довідника — прапорець не залежить від походження компетенції.
+5. Given у мене кілька компетенцій, з яких частина позначена `willing_to_teach=true`, When рендериться профіль, Then кожна така компетенція має візуальний індикатор "Вчитель", і над списком — лічильник "Готовий викладати: {count} з {total}" (ICU plural на `{count}`).
+6. Given жодна компетенція не позначена `willing_to_teach`, When рендериться профіль, Then жодного вчительського індикатора не показується — нейтральний стан, не помилка.
+7. Given директорія/пошук вчителів за компетенціями, Then явно поза межами цього проходу — прапорець лише зберігається на BE й показується у власному профілі користувача; будь-який публічний список/пошук вчителів — окрема майбутня фіча.
+
+## Локалізація
+- `profile.competencies.willingToTeach.label` — en: "Available to teach", uk: "Готовий викладати"
+- `profile.competencies.willingToTeach.badge` — en: "Teacher", uk: "Вчитель"
+- `profile.competencies.willingToTeach.summary` (ICU plural на `{count}`) — en: one "Available to teach {count} of {total}" / other "Available to teach {count} of {total}"; uk: one "Готовий викладати {count} з {total}" / few "Готовий викладати {count} з {total}" / many "Готовий викладати {count} з {total}" / other "Готовий викладати {count} з {total}"
+- `errors.competency.notFound` — реюз ключа з AUTH-005 (`errors.competency.notFound`), новий ключ не заводиться.
+
+## Відповідність scope
+Виходить за межі початкового CLAUDE.md — свідоме розширення, узгоджене до реалізації разом з AUTH-004…AUTH-006 (спільний абзац "походження" вище). Рішення "per-competency, не глобальний перемикач" — явно ухвалене продуктове рішення бізнес-аналітика на основі буквального формулювання запиту користувача (пункт 4 в абзаці "походження"), не інтерпретація за замовчуванням. Директорія/пошук вчителів свідомо винесені за межі цього проходу — новий пункт, якого раніше не було в розділі "Поза межами цього етапу" CLAUDE.md явно, але він логічно продовжує вже наявний принцип цього розділу (не будувати механізми відкриття/пошуку контенту для сторонніх у цьому релізі).
 ```

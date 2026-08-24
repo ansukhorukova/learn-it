@@ -19,13 +19,15 @@ const { validateShareRole, validateShareEmail } = require('../lib/shareValidatio
  * the board's).
  */
 
+// AUTH-004 AC5/AC6: same public_name-falls-back-to-display_name resolution
+// as boardMembers.service.js's toMember — see that comment for the reasoning.
 function toShare(row) {
   return {
     id: row.id,
     taskId: row.task_id,
     userId: row.user_id,
     email: row.email,
-    displayName: row.display_name,
+    displayName: row.public_name || row.display_name,
     role: row.role,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -37,7 +39,7 @@ async function listShares(taskId, ownerId) {
   const rows = await db('task_shares')
     .join('users', 'users.id', 'task_shares.user_id')
     .where({ task_id: taskId })
-    .select('task_shares.*', 'users.email as email', 'users.display_name as display_name')
+    .select('task_shares.*', 'users.email as email', 'users.display_name as display_name', 'users.public_name as public_name')
     .orderBy('task_shares.created_at', 'asc');
   return rows.map(toShare);
 }
@@ -71,7 +73,7 @@ async function addShare(taskId, ownerId, { email, role } = {}) {
       .merge({ role: validRole, updated_at: trx.fn.now() })
       .returning('*');
 
-    return toShare({ ...row, email: targetUser.email, display_name: targetUser.display_name });
+    return toShare({ ...row, email: targetUser.email, display_name: targetUser.display_name, public_name: targetUser.public_name });
   });
 }
 
@@ -93,7 +95,7 @@ async function updateShareRole(taskId, shareId, ownerId, { role } = {}) {
   });
 
   const user = await db('users').where({ id: row.user_id }).first();
-  return toShare({ ...row, email: user.email, display_name: user.display_name });
+  return toShare({ ...row, email: user.email, display_name: user.display_name, public_name: user.public_name });
 }
 
 async function removeShare(taskId, shareId, ownerId) {

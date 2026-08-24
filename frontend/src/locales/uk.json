@@ -1,6 +1,9 @@
 {
   "app": {
-    "name": "Learning Time Tracker"
+    "name": "Learning Time Tracker",
+    "nav": {
+      "profile": "Профіль"
+    }
   },
   "common": {
     "cancel": "Скасувати",
@@ -293,12 +296,76 @@
       "confirmButton": "Видалити запис"
     }
   },
+  "profile": {
+    "title": "Профіль",
+    "publicName": {
+      "label": "Публічне ім'я",
+      "placeholder": "Як вас бачать інші на спільних бордах",
+      "hint": "Показується людям, з якими ви ділитесь бордами чи тасками, замість імені акаунту."
+    },
+    "displayName": {
+      "readonlyLabel": "Ім'я акаунту (не редагується)"
+    },
+    "save": {
+      "cta": "Зберегти",
+      "saving": "Збереження…",
+      "saved": "Збережено"
+    },
+    "competencies": {
+      "title": "Компетенції",
+      "count": {
+        "one": "{count} компетенція",
+        "few": "{count} компетенції",
+        "many": "{count} компетенцій",
+        "other": "{count} компетенції"
+      },
+      "empty": "Ви ще не додали жодної компетенції.",
+      "addCta": "Додати",
+      "removeCta": "Прибрати",
+      "picker": {
+        "placeholder": "Оберіть компетенцію…",
+        "customOption": "Інше (введіть свою)"
+      },
+      "custom": {
+        "inputPlaceholder": "напр. Візуалізація даних"
+      },
+      "willingToTeach": {
+        "label": "Готовий викладати",
+        "badge": "Вчитель",
+        "summary": {
+          "one": "Готовий викладати {count} з {total}",
+          "few": "Готовий викладати {count} з {total}",
+          "many": "Готовий викладати {count} з {total}",
+          "other": "Готовий викладати {count} з {total}"
+        }
+      }
+    }
+  },
+  "competency": {
+    "mathematician": "Математик",
+    "business_analyst": "Бізнес-аналітик",
+    "java_developer": "Розробник Java",
+    "ux_designer": "UX-дизайнер",
+    "product_manager": "Продукт-менеджер",
+    "data_scientist": "Дата-сайєнтист"
+  },
   "errors": {
     "auth": {
       "tokenMissing": "Щоб продовжити, увійдіть в акаунт.",
       "tokenInvalid": "Термін дії сесії закінчився. Увійдіть ще раз.",
       "invalidEmail": "Потрібно вказати коректний емейл.",
       "rateLimited": "Забагато запитів. Спробуйте пізніше."
+    },
+    "profile": {
+      "publicNameTooLong": "Публічне ім'я має містити не більше 100 символів."
+    },
+    "competency": {
+      "alreadyAdded": "Ви вже додали цю компетенцію.",
+      "notFound": "Такої компетенції не існує.",
+      "inactive": "Цю компетенцію більше не можна додати.",
+      "customLabelRequired": "Введіть компетенцію.",
+      "customLabelTooLong": "Компетенція має містити не більше 100 символів.",
+      "invalidPayload": "Оберіть компетенцію зі списку або введіть свою — не обидва варіанти одночасно."
     },
     "board": {
       "notFound": "Дошку не знайдено.",

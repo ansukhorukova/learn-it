@@ -1,11 +1,16 @@
 const db = require('../db/knex');
 const { resolveLocale } = require('../config/locales');
+const { ValidationError } = require('../lib/serviceErrors');
+
+// AUTH-004 AC4.
+const PUBLIC_NAME_MAX_LENGTH = 100;
 
 function toProfile(row) {
   return {
     id: row.id,
     email: row.email,
     displayName: row.display_name,
+    publicName: row.public_name,
     locale: row.locale,
     createdAt: row.created_at,
   };
@@ -81,4 +86,57 @@ async function getSignInProviderForEmail(email) {
   return (row && row.last_sign_in_provider) || null;
 }
 
-module.exports = { getOrCreateUser, getSignInProviderForEmail };
+/**
+ * Validates a candidate `public_name` (AUTH-004 AC2-4): `null` (explicit
+ * reset to the `display_name` fallback, AC3 — a deliberate action, not a
+ * validation failure) passes through unchanged; a string is trimmed, an
+ * empty-after-trim string is ALSO treated as a reset to null (AC3 covers
+ * "clear the field and save", which the FE sends as an empty string, not
+ * necessarily a literal `null`); anything left over 100 chars is rejected
+ * (AC4).
+ */
+function validatePublicName(value) {
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (trimmed.length > PUBLIC_NAME_MAX_LENGTH) throw new ValidationError('errors.profile.publicNameTooLong');
+  return trimmed;
+}
+
+/**
+ * Partial update of the caller's own profile (AUTH-004). This pass only
+ * recognizes `publicName` — any other key in the body (e.g. a future
+ * `locale` field) is silently ignored, and OMITTING `publicName` entirely
+ * leaves the column untouched (AC8: "PATCH ... без поля public_name ...
+ * лишається незмінним"), same "undefined vs explicit value" convention
+ * already used throughout timeEntries.service.js's updateTimeEntry.
+ *
+ * `userId` is always `req.firebaseUser.uid` from an already-verified token
+ * (CLAUDE.md: BE is the single point of authorization) — there is no id
+ * parameter here for a caller to substitute another user's id, unlike
+ * every other resource in this codebase that takes a route `:id`.
+ */
+async function updateProfile(userId, { publicName } = {}) {
+  const patch = {};
+  if (publicName !== undefined) {
+    patch.public_name = validatePublicName(publicName);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    const row = await db('users').where({ id: userId }).first();
+    // Shouldn't happen — requireAuth already verified the token, and every
+    // authenticated caller has a row from getOrCreateUser's first-sign-in
+    // upsert. Not a NotFoundError (that maps to a misleading 404 with no
+    // matching "profile not found" messageKey) — let it fall through to
+    // sendServiceError's generic 500 branch like any other unexpected state.
+    if (!row) throw new Error(`users.updateProfile: no row for authenticated uid ${userId}`);
+    return toProfile(row);
+  }
+
+  patch.updated_at = db.fn.now();
+  const [row] = await db('users').where({ id: userId }).update(patch).returning('*');
+  if (!row) throw new Error(`users.updateProfile: update returned no row for authenticated uid ${userId}`);
+  return toProfile(row);
+}
+
+module.exports = { getOrCreateUser, getSignInProviderForEmail, updateProfile, PUBLIC_NAME_MAX_LENGTH };

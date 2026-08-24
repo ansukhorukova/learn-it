@@ -232,3 +232,40 @@ export function updateTaskShareRole(idToken, taskId, shareId, { role }) {
 export function removeTaskShare(idToken, taskId, shareId) {
   return request(`/tasks/${taskId}/shares/${shareId}`, { method: 'DELETE', idToken });
 }
+
+// --- Profile & competencies (AUTH-004..AUTH-007) ---
+
+// PATCH /users/me — partial profile update. `updateProfile`'s `publicName`
+// may be a string, empty string, or null; users.service.js on the BE treats
+// an empty/whitespace string the same as null (reset to the display_name
+// fallback, AUTH-004 AC3) — the FE doesn't need to pre-convert.
+export function fetchProfile(idToken) {
+  return request('/users/me', { idToken });
+}
+
+export function updateProfile(idToken, payload) {
+  return request('/users/me', { method: 'PATCH', idToken, body: payload });
+}
+
+// GET /competencies — the active dictionary the picker offers (AUTH-005 AC1).
+export function listCompetencyCatalog(idToken) {
+  return request('/competencies', { idToken });
+}
+
+export function listUserCompetencies(idToken) {
+  return request('/users/me/competencies', { idToken });
+}
+
+// {competencyId} for a dictionary pick, or {customLabel} for free text —
+// exactly one of the two (AUTH-006 AC5), enforced on the BE.
+export function addUserCompetency(idToken, payload) {
+  return request('/users/me/competencies', { method: 'POST', idToken, body: payload });
+}
+
+export function updateUserCompetency(idToken, id, { willingToTeach }) {
+  return request(`/users/me/competencies/${id}`, { method: 'PATCH', idToken, body: { willingToTeach } });
+}
+
+export function removeUserCompetency(idToken, id) {
+  return request(`/users/me/competencies/${id}`, { method: 'DELETE', idToken });
+}

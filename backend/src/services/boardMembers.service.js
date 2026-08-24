@@ -15,13 +15,18 @@ const { validateShareRole, validateShareEmail } = require('../lib/shareValidatio
  * management only ever has one valid caller.
  */
 
+// AUTH-004 AC5/AC6: a member is shown by their `public_name` if they've set
+// one, falling back to the system `display_name` otherwise — never the raw
+// `display_name` when a `public_name` exists. Resolved here, server-side,
+// rather than in the FE, so every caller of this service (and any future
+// one) gets the same fallback for free instead of re-implementing it.
 function toMember(row) {
   return {
     id: row.id,
     boardId: row.board_id,
     userId: row.user_id,
     email: row.email,
-    displayName: row.display_name,
+    displayName: row.public_name || row.display_name,
     role: row.role,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -33,7 +38,7 @@ async function listMembers(boardId, ownerId) {
   const rows = await db('board_members')
     .join('users', 'users.id', 'board_members.user_id')
     .where({ board_id: boardId })
-    .select('board_members.*', 'users.email as email', 'users.display_name as display_name')
+    .select('board_members.*', 'users.email as email', 'users.display_name as display_name', 'users.public_name as public_name')
     .orderBy('board_members.created_at', 'asc');
   return rows.map(toMember);
 }
@@ -75,7 +80,7 @@ async function addMember(boardId, ownerId, { email, role } = {}) {
       .merge({ role: validRole, updated_at: trx.fn.now() })
       .returning('*');
 
-    return toMember({ ...row, email: targetUser.email, display_name: targetUser.display_name });
+    return toMember({ ...row, email: targetUser.email, display_name: targetUser.display_name, public_name: targetUser.public_name });
   });
 }
 
@@ -104,7 +109,7 @@ async function updateMemberRole(boardId, memberId, ownerId, { role } = {}) {
   });
 
   const user = await db('users').where({ id: row.user_id }).first();
-  return toMember({ ...row, email: user.email, display_name: user.display_name });
+  return toMember({ ...row, email: user.email, display_name: user.display_name, public_name: user.public_name });
 }
 
 async function removeMember(boardId, memberId, ownerId) {

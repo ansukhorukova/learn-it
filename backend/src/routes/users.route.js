@@ -1,8 +1,9 @@
 const express = require('express');
 
 const requireAuth = require('../middleware/auth.middleware');
-const { getOrCreateUser } = require('../services/users.service');
-const { sendError } = require('../lib/apiError');
+const { getOrCreateUser, updateProfile } = require('../services/users.service');
+const competenciesService = require('../services/competencies.service');
+const { sendError, sendServiceError } = require('../lib/apiError');
 
 const router = express.Router();
 
@@ -21,6 +22,66 @@ router.get('/me', requireAuth, async (req, res) => {
     // eslint-disable-next-line no-console
     console.error('GET /api/v1/users/me failed:', err);
     return sendError(res, 500, 'INTERNAL_ERROR', 'errors.generic', 'Unexpected server error');
+  }
+});
+
+// PATCH /api/v1/users/me — partial profile update (AUTH-004). This pass only
+// recognizes `publicName`; see users.service.js's updateProfile for the
+// "omitted field = untouched" contract (AC8).
+router.patch('/me', requireAuth, async (req, res) => {
+  try {
+    const profile = await updateProfile(req.firebaseUser.uid, req.body || {});
+    return res.json(profile);
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// user_competencies CRUD (AUTH-005/AUTH-006/AUTH-007) — always scoped to the
+// caller's own rows (req.firebaseUser.uid), never a route param naming a
+// user. See competencies.service.js for the anti-enumeration contract on
+// PATCH/DELETE (a foreign id 404s, never 403).
+
+// GET /api/v1/users/me/competencies — the caller's own competencies, for
+// rendering the profile screen's list.
+router.get('/me/competencies', requireAuth, async (req, res) => {
+  try {
+    const competencies = await competenciesService.listUserCompetencies(req.firebaseUser.uid);
+    return res.json({ competencies });
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// POST /api/v1/users/me/competencies — add a dictionary pick ({competencyId})
+// or a free-text entry ({customLabel}), exactly one of the two (AUTH-006 AC5).
+router.post('/me/competencies', requireAuth, async (req, res) => {
+  try {
+    const created = await competenciesService.addUserCompetency(req.firebaseUser.uid, req.body || {});
+    return res.status(201).json(created);
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// PATCH /api/v1/users/me/competencies/:id — {willingToTeach} (AUTH-007).
+router.patch('/me/competencies/:id', requireAuth, async (req, res) => {
+  try {
+    const updated = await competenciesService.updateWillingToTeach(req.firebaseUser.uid, req.params.id, req.body || {});
+    return res.json(updated);
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// DELETE /api/v1/users/me/competencies/:id — remove, dictionary or custom
+// alike (AUTH-005 AC4 / AUTH-006 AC6).
+router.delete('/me/competencies/:id', requireAuth, async (req, res) => {
+  try {
+    await competenciesService.removeUserCompetency(req.firebaseUser.uid, req.params.id);
+    return res.status(204).end();
+  } catch (err) {
+    return sendServiceError(res, err);
   }
 });
 

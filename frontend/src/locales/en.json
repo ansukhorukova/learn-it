@@ -1,6 +1,9 @@
 {
   "app": {
-    "name": "Learning Time Tracker"
+    "name": "Learning Time Tracker",
+    "nav": {
+      "profile": "Profile"
+    }
   },
   "common": {
     "cancel": "Cancel",
@@ -289,12 +292,72 @@
       "confirmButton": "Delete entry"
     }
   },
+  "profile": {
+    "title": "Profile",
+    "publicName": {
+      "label": "Public name",
+      "placeholder": "How others see you on shared boards",
+      "hint": "Shown to people you share boards or tasks with, instead of your account name."
+    },
+    "displayName": {
+      "readonlyLabel": "Account name (not editable)"
+    },
+    "save": {
+      "cta": "Save",
+      "saving": "Saving…",
+      "saved": "Saved"
+    },
+    "competencies": {
+      "title": "Competencies",
+      "count": {
+        "one": "{count} competency",
+        "other": "{count} competencies"
+      },
+      "empty": "You haven't added any competencies yet.",
+      "addCta": "Add",
+      "removeCta": "Remove",
+      "picker": {
+        "placeholder": "Choose a competency…",
+        "customOption": "Other (type your own)"
+      },
+      "custom": {
+        "inputPlaceholder": "e.g. Data visualization"
+      },
+      "willingToTeach": {
+        "label": "Available to teach",
+        "badge": "Teacher",
+        "summary": {
+          "one": "Available to teach {count} of {total}",
+          "other": "Available to teach {count} of {total}"
+        }
+      }
+    }
+  },
+  "competency": {
+    "mathematician": "Mathematician",
+    "business_analyst": "Business Analyst",
+    "java_developer": "Java Developer",
+    "ux_designer": "UX Designer",
+    "product_manager": "Product Manager",
+    "data_scientist": "Data Scientist"
+  },
   "errors": {
     "auth": {
       "tokenMissing": "You need to sign in to continue.",
       "tokenInvalid": "Your session has expired. Please sign in again.",
       "invalidEmail": "A valid email address is required.",
       "rateLimited": "Too many requests. Please try again later."
+    },
+    "profile": {
+      "publicNameTooLong": "Public name must be 100 characters or fewer."
+    },
+    "competency": {
+      "alreadyAdded": "You've already added this competency.",
+      "notFound": "This competency doesn't exist.",
+      "inactive": "This competency is no longer available to add.",
+      "customLabelRequired": "Enter a competency.",
+      "customLabelTooLong": "Competency must be 100 characters or fewer.",
+      "invalidPayload": "Choose a competency from the list or enter your own — not both."
     },
     "board": {
       "notFound": "Board not found.",

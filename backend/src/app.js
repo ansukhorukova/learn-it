@@ -6,6 +6,7 @@ const usersRouter = require('./routes/users.route');
 const authRouter = require('./routes/auth.route');
 const boardsRouter = require('./routes/boards.route');
 const tasksRouter = require('./routes/tasks.route');
+const competenciesRouter = require('./routes/competencies.route');
 
 const app = express();
 
@@ -46,5 +47,10 @@ app.use('/api/v1/auth', authRouter);
 // attachments/time-entries above.
 app.use('/api/v1/boards', boardsRouter);
 app.use('/api/v1/tasks', tasksRouter);
+
+// The competencies dictionary (AUTH-005) — a top-level resource, not nested
+// under /users, since it's a shared catalog rather than per-user data. A
+// user's own picks live under /users/me/competencies (usersRouter above).
+app.use('/api/v1/competencies', competenciesRouter);
 
 module.exports = app;

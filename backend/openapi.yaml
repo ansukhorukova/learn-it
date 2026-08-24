@@ -76,6 +76,234 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+    patch:
+      summary: Partially update the current user's profile
+      description: >
+        AUTH-004. This pass recognizes only `publicName` — any other field in
+        the request body is ignored, and OMITTING `publicName` entirely
+        leaves it unchanged (partial update, not a full profile replace).
+        Sending `publicName: null` (or an empty/whitespace-only string)
+        explicitly resets it to `null`, which is a deliberate, valid action
+        (falls back to `displayName` wherever this user is shown to others),
+        not a validation error.
+      operationId: updateCurrentUser
+      tags: [users]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdateRequest'
+      responses:
+        '200':
+          description: The updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          description: '`publicName` longer than 100 characters (`errors.profile.publicNameTooLong`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/competencies:
+    get:
+      summary: List the caller's own competencies
+      description: >
+        AUTH-005/AUTH-006/AUTH-007. Dictionary picks and free-text (custom)
+        entries alike, each with its own `willingToTeach` flag. Always scoped
+        to the caller (`req.firebaseUser.uid`) — there is no way to list
+        another user's competencies through this API.
+      operationId: listMyCompetencies
+      tags: [profile]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The caller's competencies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  competencies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserCompetency'
+                required: [competencies]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Add a competency to the caller's profile
+      description: >
+        Exactly one of `competencyId` (a dictionary pick, AUTH-005) or
+        `customLabel` (free text, AUTH-006) must be given — both or neither
+        is 400 `errors.competency.invalidPayload`.
+
+
+        **AUTH-005 AC3/AC5**: re-adding a `competencyId` already on the
+        caller's profile is 409 `errors.competency.alreadyAdded` (no
+        upsert/idempotency here, unlike board_members/task_shares) — an
+        unknown or inactive `competencyId` is 400
+        (`errors.competency.notFound` / `errors.competency.inactive`
+        respectively). A blank/whitespace-only `customLabel` is 400
+        `errors.competency.customLabelRequired`; longer than 100 characters is
+        `errors.competency.customLabelTooLong`. Duplicate `customLabel`
+        values ARE allowed (AUTH-006 AC7) — free text is never deduplicated.
+      operationId: addMyCompetency
+      tags: [profile]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCompetencyCreateRequest'
+      responses:
+        '201':
+          description: The created competency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCompetency'
+        '400':
+          description: >
+            Invalid payload shape, unknown/inactive competencyId, or invalid
+            customLabel — see the messageKey table above.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: This `competencyId` is already on the caller's profile (`errors.competency.alreadyAdded`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/competencies/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Toggle a competency's "willing to teach" flag
+      description: >
+        AUTH-007. Works for both dictionary and custom competencies (AC4) —
+        the flag doesn't depend on origin.
+
+
+        **Anti-enumeration (AC3)**: an id belonging to another user's
+        `user_competencies` row resolves to the SAME 404
+        `errors.competency.notFound` as a genuinely missing id — never 403.
+        Same convention already applied to `time_entries` (US-011 AC7) and
+        to sign-in (AUTH-002 AC2).
+      operationId: updateMyCompetencyWillingToTeach
+      tags: [profile]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCompetencyWillingToTeachRequest'
+      responses:
+        '200':
+          description: The updated competency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCompetency'
+        '400':
+          description: '`willingToTeach` missing or not a boolean (`errors.competency.invalidPayload`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such competency on the caller's own profile (see anti-enumeration note above)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Remove a competency from the caller's profile
+      description: >
+        AUTH-005 AC4 / AUTH-006 AC6 — a single endpoint for both dictionary
+        and custom competencies. Removing a competency that has
+        `willingToTeach = true` simply removes the row; the flag has no
+        existence independent of it. Same anti-enumeration contract as PATCH
+        above.
+      operationId: removeMyCompetency
+      tags: [profile]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such competency on the caller's own profile (see anti-enumeration note above)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /competencies:
+    get:
+      summary: The active competencies dictionary
+      description: >
+        AUTH-005 AC1 — what the profile screen's picker offers. A competency
+        retired via `is_active = false` (admin-managed, outside this API)
+        simply stops appearing here; any `user_competencies` rows already
+        referencing it are unaffected (AUTH-005 AC6).
+      operationId: listCompetenciesCatalog
+      tags: [profile]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The active dictionary, ordered by slug
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  competencies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Competency'
+                required: [competencies]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
   /auth/provider-hint:
     get:
@@ -1616,13 +1844,105 @@ components:
           format: email
         displayName:
           type: string
+          description: System-generated, never user-editable (see the users table comment in CLAUDE.md "Дані").
+        publicName:
+          type: string
+          nullable: true
+          description: >
+            AUTH-004 — user-editable name shown to other users in shared
+            contexts (board_members/task_shares listings) INSTEAD OF
+            displayName, when set. Null falls back to displayName wherever
+            this user is shown to someone else.
         locale:
           type: string
           example: en
         createdAt:
           type: string
           format: date-time
-      required: [id, email, displayName, locale, createdAt]
+      required: [id, email, displayName, publicName, locale, createdAt]
+
+    UserProfileUpdateRequest:
+      type: object
+      description: >
+        Partial update — every field is optional; an OMITTED field is left
+        unchanged (AUTH-004 AC8). This pass only recognizes `publicName`.
+      properties:
+        publicName:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: >
+            An explicit `null` (or an empty/whitespace-only string) resets to
+            the displayName fallback (AC3) — not a validation error. Over 100
+            characters (after trim) is 400 `errors.profile.publicNameTooLong`.
+
+    Competency:
+      type: object
+      description: One entry in the active competencies dictionary (AUTH-005).
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          description: Locale lookup key — rendered via `competency.<slug>` in the FE's own dictionary, never returned pre-translated.
+      required: [id, slug]
+
+    UserCompetency:
+      type: object
+      description: >
+        One of the caller's own competencies — either a dictionary pick
+        (`isCustom = false`, `competencyId`/`competencySlug` set) or a
+        free-text entry (`isCustom = true`, `customLabel` set). Exactly one
+        of `competencySlug`/`customLabel` is non-null on any given row.
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: Firebase UID — always the caller for any row this API ever returns.
+        competencyId:
+          type: string
+          format: uuid
+          nullable: true
+        competencySlug:
+          type: string
+          nullable: true
+          description: Set only when isCustom is false — render via `competency.<slug>`, same as Competency.slug above.
+        isCustom:
+          type: boolean
+        customLabel:
+          type: string
+          nullable: true
+          description: Set only when isCustom is true. User-generated text — rendered as-is, never run through the locale dictionary.
+        willingToTeach:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, userId, competencyId, competencySlug, isCustom, customLabel, willingToTeach, createdAt, updatedAt]
+
+    UserCompetencyCreateRequest:
+      type: object
+      description: Exactly one of `competencyId`/`customLabel` — see POST /users/me/competencies for the full validation rules.
+      properties:
+        competencyId:
+          type: string
+          format: uuid
+        customLabel:
+          type: string
+          maxLength: 100
+
+    UserCompetencyWillingToTeachRequest:
+      type: object
+      properties:
+        willingToTeach:
+          type: boolean
+      required: [willingToTeach]
 
     Board:
       type: object
@@ -1889,6 +2209,10 @@ components:
           format: email
         displayName:
           type: string
+          description: >
+            AUTH-004 AC5/AC6 — this member's publicName if they've set one,
+            else their system displayName. Already resolved server-side; the
+            raw displayName is never separately exposed here.
         role:
           type: string
           enum: [viewer, collaborator]
@@ -1918,6 +2242,11 @@ components:
           format: email
         displayName:
           type: string
+          description: >
+            AUTH-004 AC5/AC6 — this recipient's publicName if they've set
+            one, else their system displayName. Already resolved
+            server-side; the raw displayName is never separately exposed
+            here.
         role:
           type: string
           enum: [viewer, collaborator]
