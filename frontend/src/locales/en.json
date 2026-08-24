@@ -188,7 +188,8 @@
         "one": "{count} attachment",
         "other": "{count} attachments"
       },
-      "timeBadge": "{duration}"
+      "timeBadge": "{duration}",
+      "plannedBadge": "Est. {duration}"
     }
   },
   "share": {
@@ -258,7 +259,11 @@
       "bodyLabel": "Note",
       "bodyPlaceholder": "Write a short note…",
       "submit": "Add note",
-      "saving": "Adding…"
+      "saving": "Adding…",
+      "showMore": "Show more",
+      "showLess": "Show less",
+      "expandAriaLabel": "Show full note text",
+      "collapseAriaLabel": "Collapse note text"
     },
     "delete": {
       "cta": "Delete",
@@ -299,6 +304,23 @@
       "confirmTitle": "Delete this entry?",
       "confirmMessage": "This will permanently delete this time entry. This cannot be undone.",
       "confirmButton": "Delete entry"
+    }
+  },
+  "taskPanel": {
+    "plannedTime": {
+      "label": "Estimated time",
+      "hoursLabel": "Hours",
+      "minutesLabel": "Minutes",
+      "summary": "Estimated: {estimated} / Logged: {logged}",
+      "clear": "Clear estimate"
+    },
+    "comments": {
+      "title": "Comments",
+      "empty": "No comments yet.",
+      "bodyPlaceholder": "Write a comment…",
+      "submit": "Post",
+      "saving": "Posting…",
+      "viewerBanner": "You have view-only access — you can read comments but not post new ones."
     }
   },
   "profile": {
@@ -388,7 +410,9 @@
       "titleTooLong": "Task title must be 200 characters or fewer.",
       "notesTooLong": "Task description must be 2000 characters or fewer.",
       "invalidStatus": "Invalid task status.",
-      "positionConflict": "This board changed while you were working. Please try again."
+      "positionConflict": "This board changed while you were working. Please try again.",
+      "plannedMinutesInvalid": "Enter a valid estimate (0–59 minutes, whole numbers).",
+      "plannedMinutesTooLarge": "Estimate can't exceed 9999 minutes (~166 hours)."
     },
     "share": {
       "invalidRole": "Choose a valid role.",
@@ -420,6 +444,10 @@
       "minutesTooLarge": "A single entry can't exceed 24 hours (1440 minutes).",
       "noteTooLong": "Note must be 500 characters or fewer.",
       "notFound": "Time entry not found."
+    },
+    "comment": {
+      "bodyRequired": "Enter a comment.",
+      "bodyTooLong": "Comment must be 2000 characters or fewer."
     },
     "generic": "Something went wrong. Please try again."
   },

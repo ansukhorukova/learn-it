@@ -8,6 +8,7 @@ const tasksService = require('../services/tasks.service');
 const attachmentsService = require('../services/attachments.service');
 const timeEntriesService = require('../services/timeEntries.service');
 const taskSharesService = require('../services/taskShares.service');
+const taskCommentsService = require('../services/taskComments.service');
 
 const router = express.Router();
 
@@ -266,6 +267,32 @@ router.delete('/:id/shares/:shareId', requireAuth, async (req, res) => {
   try {
     await taskSharesService.removeShare(req.params.id, req.params.shareId, req.firebaseUser.uid);
     res.status(204).end();
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// GET /api/v1/tasks/:id/comments — list a task's comments, oldest first
+// (US-019). Unlike time-entries, comments are shared — any effective role
+// (owner/collaborator/viewer) sees the same full list, same
+// `requireTaskRole` viewer+ gate as attachments/time-entries listing.
+router.get('/:id/comments', requireAuth, async (req, res) => {
+  try {
+    const comments = await taskCommentsService.listComments(req.params.id, req.firebaseUser.uid);
+    res.json({ comments });
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// POST /api/v1/tasks/:id/comments — create a comment (US-019). Owner/
+// collaborator only — a viewer gets 403 errors.task.readOnlyAccess, no
+// access at all gets 403 errors.task.forbidden (same gate as PATCH
+// /tasks/:id). No PATCH/DELETE for a comment in this pass (MVP scope).
+router.post('/:id/comments', requireAuth, async (req, res) => {
+  try {
+    const comment = await taskCommentsService.createComment(req.params.id, req.firebaseUser.uid, req.body || {});
+    res.status(201).json(comment);
   } catch (err) {
     sendServiceError(res, err);
   }

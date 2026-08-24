@@ -999,6 +999,15 @@ paths:
         column, which a task-share-only grant never gives read access to
         (US14) — the title-only edit path is unaffected by this and stays
         available to a task-share-only collaborator.
+
+
+        **`plannedMinutes` (US-020)**: optional estimated time in minutes,
+        same collaborator+ access rule as title/notes (never requires
+        board-level access — it never touches the reorder branch). The FE's
+        two-field hours/minutes form combines to a single integer before
+        sending; `0` or omitting both fields on the FE is sent as `null`
+        here, which is a deliberate reset, not an error (AC3) — the field
+        disappears from the response, not merely defaults to 0.
       operationId: updateTask
       tags: [tasks]
       security:
@@ -1025,6 +1034,15 @@ paths:
                   type: integer
                   minimum: 0
                   description: Zero-based target index within the destination column.
+                plannedMinutes:
+                  type: integer
+                  nullable: true
+                  minimum: 0
+                  maximum: 9999
+                  description: >
+                    Estimated time in minutes (US-020). `null` explicitly
+                    resets/clears the estimate (AC3) — omit the field
+                    entirely instead to leave it unchanged.
       responses:
         '200':
           description: The updated task
@@ -1033,7 +1051,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Task'
         '400':
-          description: Empty/too-long title, too-long description, or an invalid status value
+          description: >
+            Empty/too-long title, too-long description, an invalid status
+            value, or an invalid `plannedMinutes` (non-integer/negative —
+            `errors.task.plannedMinutesInvalid`; over 9999 —
+            `errors.task.plannedMinutesTooLarge`).
           content:
             application/json:
               schema:
@@ -1088,6 +1110,117 @@ paths:
           description: >
             No access at all (`errors.task.forbidden`), or a viewer trying
             to delete (`errors.task.readOnlyAccess`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/comments:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a task's comments
+      description: >
+        task_comments (US-019) — chronological (oldest first), no
+        pagination this pass (AC8). Unlike `time-entries`, comments are
+        SHARED across everyone with task access, not privacy-scoped per
+        caller — reuses the same viewer+ `requireTaskRole` gate as
+        `GET /tasks/{id}/attachments`/`GET /tasks/{id}/time-entries`: owner,
+        collaborator, and viewer (board- or task-level, whichever access
+        source is more permissive) all see the identical list.
+      operationId: listTaskComments
+      tags: [comments]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The task's comments, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskComment'
+                required: [comments]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task exists but the caller has no board- or task-level access to it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Post a comment on a task
+      description: >
+        Create a `task_comments` row (US-019 AC2). Owner/collaborator only
+        (board- or task-level, whichever is more permissive) — same
+        collaborator+ gate as `PATCH /tasks/{id}`: a viewer gets 403
+        `errors.task.readOnlyAccess` (AC3), no access at all gets 403
+        `errors.task.forbidden` (AC6). No `PATCH`/`DELETE` for a comment
+        exists in this pass — view + add only, an explicit MVP scope
+        decision (AC10), not an oversight.
+      operationId: createTaskComment
+      tags: [comments]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+              required: [body]
+      responses:
+        '201':
+          description: The newly created comment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskComment'
+        '400':
+          description: >
+            Empty/whitespace-only body (`errors.comment.bodyRequired`) or
+            body over 2000 characters (`errors.comment.bodyTooLong`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No access to the task at all (`errors.task.forbidden`), or a
+            viewer trying to post (`errors.task.readOnlyAccess`).
           content:
             application/json:
               schema:
@@ -2067,13 +2200,25 @@ components:
             sessions' durations plus a running timer's live elapsed time, if
             any. Computed live, never denormalized. Rendered as a badge on
             the task card, hidden when 0.
+        plannedMinutes:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 9999
+          description: >
+            Optional estimated time in minutes (US-020), set via `PATCH
+            /tasks/{id}`. `null` when no estimate has been set — the FE
+            shows no estimate placeholder in that case (AC6). Shown
+            alongside `totalSeconds` as a simple "estimated / logged"
+            comparison — no progress bar or over/under indicator (AC7,
+            explicit scope decision).
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, boardId, title, notes, status, position, createdBy, attachmentCount, myRole, totalSeconds, createdAt, updatedAt]
+      required: [id, boardId, title, notes, status, position, createdBy, attachmentCount, myRole, totalSeconds, plannedMinutes, createdAt, updatedAt]
 
     Attachment:
       type: object
@@ -2274,6 +2419,38 @@ components:
           type: string
           format: date-time
       required: [id, taskId, userId, email, displayName, role, createdAt, updatedAt]
+
+    TaskComment:
+      type: object
+      description: >
+        A `task_comments` row (US-019) — SHARED across everyone with access
+        to the task (owner/collaborator/viewer), on the same footing as
+        `tasks.status`, unlike the privacy-scoped `time_entries`. View + add
+        only this pass — no `updatedAt` (nothing ever mutates a row after
+        insert, since there's no edit endpoint).
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        authorId:
+          type: string
+          description: Firebase UID of the comment's author.
+        authorName:
+          type: string
+          description: >
+            AUTH-004 AC5/AC6 — the author's publicName if they've set one,
+            else their system displayName. Already resolved server-side;
+            the raw displayName is never separately exposed here.
+        body:
+          type: string
+          maxLength: 2000
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, taskId, authorId, authorName, body, createdAt]
 
     ShareWriteRequest:
       type: object

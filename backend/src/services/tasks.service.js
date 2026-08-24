@@ -9,6 +9,10 @@ const TITLE_MAX_LENGTH = 200;
 const NOTES_MAX_LENGTH = 2000;
 const STATUSES = ['planned', 'in_progress', 'done'];
 const DEFAULT_STATUS = STATUSES[0];
+// US-020 AC5: "~166 годин" — the approved AC's own upper bound for the
+// estimate field, kept as a named constant since both the invalid-format
+// and too-large error branches below reference it.
+const PLANNED_MINUTES_MAX = 9999;
 
 // Gap-based position scheme: every write reindexes the affected column to
 // evenly-spaced multiples of POSITION_GAP (1000, 2000, ...). Simpler and more
@@ -41,6 +45,11 @@ function toTask(row) {
     createdBy: row.created_by,
     attachmentCount: row.attachment_count !== undefined ? Number(row.attachment_count) || 0 : 0,
     myRole: row.myRole || 'owner',
+    // US-020: nullable estimate in minutes, passed straight through from the
+    // `tasks.planned_minutes` column — no aggregation needed (unlike
+    // `totalSeconds`, which is merged in separately at the route layer from
+    // time_entries; see boards.route.js).
+    plannedMinutes: row.planned_minutes ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -68,6 +77,24 @@ function normalizeNotes(notes) {
   const trimmed = String(notes).trim();
   if (trimmed.length > NOTES_MAX_LENGTH) throw new ValidationError('errors.task.notesTooLong');
   return trimmed || null;
+}
+
+// US-020 AC2/AC3/AC4/AC5: `plannedMinutes` is the already-combined
+// hours*60+minutes total the FE computes from its two-field (hours/minutes)
+// form — this only validates the single integer the API actually receives.
+// `null` is a deliberate, explicit reset (AC3, same "clearing back to NULL
+// is a legitimate action" pattern as `users.public_name`, AUTH-004 AC3) —
+// distinct from `undefined`, which callers use to mean "field omitted,
+// leave unchanged" (see updateTask's `!== undefined` check below).
+function validatePlannedMinutes(plannedMinutes) {
+  if (plannedMinutes === null) return null;
+  if (typeof plannedMinutes !== 'number' || !Number.isInteger(plannedMinutes) || plannedMinutes < 0) {
+    throw new ValidationError('errors.task.plannedMinutesInvalid');
+  }
+  if (plannedMinutes > PLANNED_MINUTES_MAX) {
+    throw new ValidationError('errors.task.plannedMinutesTooLarge');
+  }
+  return plannedMinutes;
 }
 
 // Tasks have no `owner_id` of their own — authorization is derived through
@@ -244,15 +271,21 @@ async function reindexColumn(trx, orderedIds) {
  *   - cross-column drag: status changes, position = index in the new column.
  *   - same-column reorder: status omitted/unchanged, position = new index.
  */
-async function updateTask(taskId, ownerId, { title, notes, status, position } = {}) {
+async function updateTask(taskId, ownerId, { title, notes, status, position, plannedMinutes } = {}) {
   // US15/US16: editing/moving a task needs collaborator+ — a viewer (board-
-  // or task-level) is read-only here.
+  // or task-level) is read-only here. US-020 reuses this exact same gate for
+  // `plannedMinutes` — no separate authorization path.
   const task = await getOwnedTaskWithBoard(taskId, ownerId, { minRole: 'collaborator' });
 
   const patch = {};
   if (title !== undefined) patch.title = validateTitle(title);
   const normalizedNotes = normalizeNotes(notes);
   if (normalizedNotes !== undefined) patch.notes = normalizedNotes;
+  // US-020: `plannedMinutes` never participates in the reorder branch below
+  // (it's not `status`/`position`) — a plannedMinutes-only PATCH always
+  // takes the title/notes-style branch just below, going through the same
+  // lockedUpdate existence-check as every other non-reordering field.
+  if (plannedMinutes !== undefined) patch.planned_minutes = validatePlannedMinutes(plannedMinutes);
 
   const isReordering = status !== undefined || position !== undefined;
   if (!isReordering) {

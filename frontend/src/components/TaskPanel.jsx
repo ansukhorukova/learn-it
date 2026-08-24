@@ -5,9 +5,11 @@ import {
   createLinkAttachment,
   createManualTimeEntry,
   createNoteAttachment,
+  createTaskComment,
   deleteAttachment,
   deleteTimeEntry,
   listAttachments,
+  listTaskComments,
   listTaskShares,
   listTimeEntries,
   removeTaskShare,
@@ -19,6 +21,8 @@ import {
   uploadFileAttachment,
 } from '../api/client';
 import { ALLOWED_FILE_MIME_TYPES, FILE_INPUT_ACCEPT, MAX_FILE_SIZE_BYTES } from '../constants/attachmentLimits';
+import { COMMENT_BODY_MAX_LENGTH } from '../constants/commentLimits';
+import { PLANNED_MINUTES_FIELD_MAX, PLANNED_TOTAL_MINUTES_MAX } from '../constants/plannedTimeLimits';
 import { MINUTES_MAX, MINUTES_MIN, NOTE_MAX_LENGTH as TIME_NOTE_MAX_LENGTH } from '../constants/timeEntryLimits';
 import { formatDuration, formatSessionTimestamp, formatStopwatch } from '../lib/duration';
 import { canWrite } from '../lib/roles';
@@ -58,8 +62,16 @@ function truncate(text, max) {
 // board/task delete pattern). `canDelete` (US15/US16) hides the delete
 // control entirely for a viewer, rather than showing it disabled — matches
 // TaskCard's equivalent gating in BoardViewPage.jsx.
+// US-018: a note chip whose body exceeds NOTE_PREVIEW_LENGTH gets an inline
+// expand/collapse control instead of a silently-truncated, unrecoverable
+// preview. `noteExpanded` is declared unconditionally (not inside the
+// kind==='note' branch below) to keep this component's hook order stable
+// across renders regardless of attachment.kind — it's simply unused for
+// file/link chips.
 function AttachmentChip({ attachment, t, onDelete, canDelete }) {
+  const [noteExpanded, setNoteExpanded] = useState(false);
   let content;
+  let isExpandedNote = false;
   if (attachment.kind === 'file') {
     content = attachment.isImage ? (
       <a href={attachment.downloadUrl} target="_blank" rel="noopener noreferrer" className={styles.chipLink}>
@@ -81,15 +93,33 @@ function AttachmentChip({ attachment, t, onDelete, canDelete }) {
       </a>
     );
   } else {
+    const body = attachment.body || '';
+    // AC1/4: the control only exists in the DOM when the body actually
+    // exceeds the preview threshold — a short note renders its full text
+    // immediately with no "Show more"/disabled button.
+    const isLong = body.length > NOTE_PREVIEW_LENGTH;
+    const displayText = noteExpanded || !isLong ? body : truncate(body, NOTE_PREVIEW_LENGTH);
+    isExpandedNote = noteExpanded && isLong;
     content = (
-      <span className={styles.chipLabel} title={attachment.body}>
-        {truncate(attachment.body, NOTE_PREVIEW_LENGTH)}
-      </span>
+      <div className={styles.noteBody}>
+        <span className={noteExpanded ? styles.noteTextExpanded : styles.chipLabel}>{displayText}</span>
+        {isLong && (
+          <button
+            type="button"
+            className={styles.noteToggle}
+            onClick={() => setNoteExpanded((v) => !v)}
+            aria-expanded={noteExpanded}
+            aria-label={t(noteExpanded ? 'attachment.note.collapseAriaLabel' : 'attachment.note.expandAriaLabel')}
+          >
+            {t(noteExpanded ? 'attachment.note.showLess' : 'attachment.note.showMore')}
+          </button>
+        )}
+      </div>
     );
   }
 
   return (
-    <li className={styles.chip}>
+    <li className={styles.chip} data-note-expanded={isExpandedNote || undefined}>
       {content}
       {canDelete && (
         <button
@@ -116,7 +146,18 @@ function AttachmentChip({ attachment, t, onDelete, canDelete }) {
 // PATCH response (tasks.service.js's non-reordering branch) has no
 // attachmentCount and a naive full-object merge would clobber the card's
 // existing badge count back to 0.
-function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onNotesUpdated, onTimeSummaryChange }) {
+function TaskPanel({
+  task,
+  idToken,
+  t,
+  locale,
+  onClose,
+  onAttachmentCountChange,
+  onTitleUpdated,
+  onNotesUpdated,
+  onTimeSummaryChange,
+  onPlannedMinutesUpdated,
+}) {
   // US15/US16: a viewer (task.myRole, the caller's EFFECTIVE role — board
   // role unless elevated by a task-level share, see tasks.service.js's
   // getOwnedTaskWithBoard) can read everything in this panel but can't
@@ -142,6 +183,33 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
   const [timeLoadErrorKey, setTimeLoadErrorKey] = useState(null);
   const [timeBannerErrorKey, setTimeBannerErrorKey] = useState(null);
   const [switchNotice, setSwitchNotice] = useState(false);
+
+  // --- Estimated/planned time (US-020) ---
+  // `plannedMinutesValue` is this panel's own source of truth for the saved
+  // estimate (seeded from the task prop, then updated locally after each
+  // successful save/clear) — same pattern as `timeData` above, so the
+  // "Estimated: X / Logged: Y" summary always reflects the latest write
+  // without needing a full task re-fetch. The two number inputs are kept as
+  // separate string state so an in-progress edit (e.g. clearing the hours
+  // field to type a new value) never fights with the derived summary.
+  const [plannedMinutesValue, setPlannedMinutesValue] = useState(task.plannedMinutes ?? null);
+  const [plannedHoursInput, setPlannedHoursInput] = useState(
+    task.plannedMinutes != null ? String(Math.floor(task.plannedMinutes / 60)) : '',
+  );
+  const [plannedMinutesInput, setPlannedMinutesInput] = useState(
+    task.plannedMinutes != null ? String(task.plannedMinutes % 60) : '',
+  );
+  const [plannedErrorKey, setPlannedErrorKey] = useState(null);
+  const [savingPlanned, setSavingPlanned] = useState(false);
+
+  // --- Comments (US-019) ---
+  // Shared across every caller with task access (unlike time-entries) —
+  // fetched once per panel open, appended to locally on a successful post.
+  const [comments, setComments] = useState(null); // null = loading
+  const [commentsLoadErrorKey, setCommentsLoadErrorKey] = useState(null);
+  const [commentBody, setCommentBody] = useState('');
+  const [commentErrorKey, setCommentErrorKey] = useState(null);
+  const [submittingComment, setSubmittingComment] = useState(false);
 
   const [starting, setStarting] = useState(false);
   const [stoppingForm, setStoppingForm] = useState(false);
@@ -273,6 +341,23 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
         if (!cancelled) setTimeData({ entries: data.entries, activeEntry: data.activeEntry });
       } catch (err) {
         if (!cancelled) setTimeLoadErrorKey(err.messageKey || 'errors.generic');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id, idToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setComments(null);
+    setCommentsLoadErrorKey(null);
+    (async () => {
+      try {
+        const data = await listTaskComments(idToken, task.id);
+        if (!cancelled) setComments(data.comments);
+      } catch (err) {
+        if (!cancelled) setCommentsLoadErrorKey(err.messageKey || 'errors.generic');
       }
     })();
     return () => {
@@ -621,6 +706,89 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
     }
   }
 
+  // US-020: combines the two number inputs into a single `plannedMinutes`
+  // integer before sending (CLAUDE.md task description) — `0` or both
+  // fields empty is a deliberate reset to `null` (AC3), not a validation
+  // error. Client-side checks mirror the BE's own bounds (openapi.yaml's
+  // PATCH /tasks/{id}) purely for faster feedback; the BE re-validates
+  // independently.
+  function parsePlannedField(value) {
+    if (value === '' || value === null || value === undefined) return 0;
+    const num = Number(value);
+    return num;
+  }
+
+  async function savePlannedMinutes(totalMinutes) {
+    setSavingPlanned(true);
+    setPlannedErrorKey(null);
+    try {
+      const updated = await updateTask(idToken, task.id, { plannedMinutes: totalMinutes });
+      setPlannedMinutesValue(updated.plannedMinutes);
+      onPlannedMinutesUpdated?.(task.id, updated.plannedMinutes);
+      if (updated.plannedMinutes == null) {
+        setPlannedHoursInput('');
+        setPlannedMinutesInput('');
+      } else {
+        setPlannedHoursInput(String(Math.floor(updated.plannedMinutes / 60)));
+        setPlannedMinutesInput(String(updated.plannedMinutes % 60));
+      }
+    } catch (err) {
+      setPlannedErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSavingPlanned(false);
+    }
+  }
+
+  async function handleSavePlanned(event) {
+    event.preventDefault();
+    const hoursNum = parsePlannedField(plannedHoursInput);
+    const minutesNum = parsePlannedField(plannedMinutesInput);
+    const validHours = Number.isInteger(hoursNum) && hoursNum >= 0;
+    const validMinutes = Number.isInteger(minutesNum) && minutesNum >= 0 && minutesNum <= PLANNED_MINUTES_FIELD_MAX;
+    if (!validHours || !validMinutes) {
+      setPlannedErrorKey('errors.task.plannedMinutesInvalid');
+      return;
+    }
+
+    const total = hoursNum * 60 + minutesNum;
+    if (total > PLANNED_TOTAL_MINUTES_MAX) {
+      setPlannedErrorKey('errors.task.plannedMinutesTooLarge');
+      return;
+    }
+
+    await savePlannedMinutes(total === 0 ? null : total);
+  }
+
+  async function handleClearPlanned() {
+    setPlannedErrorKey(null);
+    await savePlannedMinutes(null);
+  }
+
+  async function handleAddComment(event) {
+    event.preventDefault();
+    const trimmed = commentBody.trim();
+    if (!trimmed) {
+      setCommentErrorKey('errors.comment.bodyRequired');
+      return;
+    }
+    if (trimmed.length > COMMENT_BODY_MAX_LENGTH) {
+      setCommentErrorKey('errors.comment.bodyTooLong');
+      return;
+    }
+
+    setSubmittingComment(true);
+    setCommentErrorKey(null);
+    try {
+      const comment = await createTaskComment(idToken, task.id, { body: trimmed });
+      setComments((prev) => [...(prev || []), comment]);
+      setCommentBody('');
+    } catch (err) {
+      setCommentErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSubmittingComment(false);
+    }
+  }
+
   const grouped = attachments ? groupByKind(attachments) : { file: [], link: [], note: [] };
 
   return (
@@ -748,6 +916,73 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
         </div>
 
         <h3 className={styles.subheading}>{t('timeEntry.section.title')}</h3>
+
+        <div className={styles.plannedTimeBlock}>
+          <span className={styles.label}>{t('taskPanel.plannedTime.label')}</span>
+          <form className={styles.plannedTimeForm} onSubmit={handleSavePlanned} noValidate>
+            <div className={styles.plannedTimeFields}>
+              <div className={styles.plannedTimeField}>
+                <label className={styles.srOnly} htmlFor="planned-time-hours">
+                  {t('taskPanel.plannedTime.hoursLabel')}
+                </label>
+                <input
+                  id="planned-time-hours"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  className={styles.input}
+                  placeholder={t('taskPanel.plannedTime.hoursLabel')}
+                  value={plannedHoursInput}
+                  disabled={!editable || savingPlanned}
+                  onChange={(event) => setPlannedHoursInput(event.target.value)}
+                />
+              </div>
+              <div className={styles.plannedTimeField}>
+                <label className={styles.srOnly} htmlFor="planned-time-minutes">
+                  {t('taskPanel.plannedTime.minutesLabel')}
+                </label>
+                <input
+                  id="planned-time-minutes"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={PLANNED_MINUTES_FIELD_MAX}
+                  step={1}
+                  className={styles.input}
+                  placeholder={t('taskPanel.plannedTime.minutesLabel')}
+                  value={plannedMinutesInput}
+                  disabled={!editable || savingPlanned}
+                  onChange={(event) => setPlannedMinutesInput(event.target.value)}
+                />
+              </div>
+            </div>
+            {plannedErrorKey && <span className={styles.fieldError}>{t(plannedErrorKey)}</span>}
+            {editable && (
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.submit} disabled={savingPlanned}>
+                  {t('common.save')}
+                </button>
+                {plannedMinutesValue != null && (
+                  <button type="button" className={styles.cancel} onClick={handleClearPlanned} disabled={savingPlanned}>
+                    {t('taskPanel.plannedTime.clear')}
+                  </button>
+                )}
+              </div>
+            )}
+          </form>
+          {/* Gated on timeData !== null too — displayTotalSeconds is 0 while
+              time entries are still loading, and showing "Logged: 0m" for a
+              moment before the real total arrives would be misleading. */}
+          {plannedMinutesValue != null && timeData !== null && (
+            <p className={styles.hint}>
+              {t('taskPanel.plannedTime.summary', {
+                estimated: formatDuration(plannedMinutesValue * 60, t),
+                logged: formatDuration(displayTotalSeconds, t),
+              })}
+            </p>
+          )}
+        </div>
 
         {timeBannerErrorKey && (
           <p className={styles.banner} role="alert">
@@ -1135,6 +1370,62 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
             </form>
           )}
         </div>
+        )}
+
+        <h3 className={styles.subheading}>{t('taskPanel.comments.title')}</h3>
+
+        {commentsLoadErrorKey && (
+          <p className={styles.banner} role="alert">
+            {t(commentsLoadErrorKey)}
+          </p>
+        )}
+
+        {comments === null && !commentsLoadErrorKey && <p className={styles.hint}>{t('attachment.panel.loading')}</p>}
+
+        {comments !== null && (
+          <div className={styles.commentsBlock}>
+            {comments.length === 0 && <p className={styles.hint}>{t('taskPanel.comments.empty')}</p>}
+            {comments.length > 0 && (
+              <ul className={styles.commentList}>
+                {comments.map((comment) => (
+                  <li key={comment.id} className={styles.commentRow}>
+                    <div className={styles.commentMeta}>
+                      <span className={styles.commentAuthor}>{comment.authorName}</span>
+                      <span className={styles.sessionMeta}>{formatSessionTimestamp(comment.createdAt, locale)}</span>
+                    </div>
+                    <p className={styles.commentBody}>{comment.body}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* US-019 AC3: a viewer sees the full list above but the add
+                form is replaced with a banner rather than a disabled form —
+                same hide-not-disable convention as the rest of this panel. */}
+            {editable ? (
+              <form className={styles.form} onSubmit={handleAddComment} noValidate>
+                <label className={styles.srOnly} htmlFor="task-comment-body">
+                  {t('taskPanel.comments.bodyPlaceholder')}
+                </label>
+                <textarea
+                  id="task-comment-body"
+                  className={styles.textarea}
+                  value={commentBody}
+                  maxLength={COMMENT_BODY_MAX_LENGTH}
+                  placeholder={t('taskPanel.comments.bodyPlaceholder')}
+                  onChange={(event) => setCommentBody(event.target.value)}
+                />
+                {commentErrorKey && <span className={styles.fieldError}>{t(commentErrorKey)}</span>}
+                <div className={styles.formActions}>
+                  <button type="submit" className={styles.submit} disabled={submittingComment}>
+                    {submittingComment ? t('taskPanel.comments.saving') : t('taskPanel.comments.submit')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className={styles.infoBanner}>{t('taskPanel.comments.viewerBanner')}</p>
+            )}
+          </div>
         )}
       </aside>
 

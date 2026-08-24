@@ -92,6 +92,14 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
           {task.totalSeconds > 0 && (
             <span className={styles.timeBadge}>{t('task.card.timeBadge', { duration: formatDuration(task.totalSeconds, t) })}</span>
           )}
+          {/* US-020 AC10: a compact "estimated" indicator, shown only when
+              plannedMinutes is set — simple text, no progress bar/graphic
+              (explicit scope decision, see USER_STORIES.md US-020 AC7). */}
+          {task.plannedMinutes != null && (
+            <span className={styles.plannedBadge}>
+              {t('task.card.plannedBadge', { duration: formatDuration(task.plannedMinutes * 60, t) })}
+            </span>
+          )}
         </div>
       </div>
       <div className={styles.cardControls}>
@@ -402,6 +410,20 @@ function BoardViewPage() {
     setPanelTask((prev) => (prev && prev.id === taskId ? { ...prev, notes } : prev));
   }, []);
 
+  // Same shape as handleTaskNotesUpdated above, for `plannedMinutes` (US-020)
+  // edited/cleared in TaskPanel — keeps the board card's compact estimate
+  // badge and `panelTask` in sync without a full task-list re-fetch.
+  const handleTaskPlannedMinutesUpdated = useCallback((taskId, plannedMinutes) => {
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const status of Object.keys(next)) {
+        next[status] = next[status].map((task) => (task.id === taskId ? { ...task, plannedMinutes } : task));
+      }
+      return next;
+    });
+    setPanelTask((prev) => (prev && prev.id === taskId ? { ...prev, plannedMinutes } : prev));
+  }, []);
+
   async function confirmDeleteTask() {
     if (!deleteTarget) return;
     setDeletingTask(true);
@@ -584,6 +606,7 @@ function BoardViewPage() {
           onTitleUpdated={handleTaskTitleUpdated}
           onNotesUpdated={handleTaskNotesUpdated}
           onTimeSummaryChange={handleTimeSummaryChange}
+          onPlannedMinutesUpdated={handleTaskPlannedMinutesUpdated}
         />
       )}
 
@@ -609,6 +632,7 @@ function TaskPanelWithToken({
   onTitleUpdated,
   onNotesUpdated,
   onTimeSummaryChange,
+  onPlannedMinutesUpdated,
 }) {
   const [idToken, setIdToken] = useState(null);
 
@@ -635,6 +659,7 @@ function TaskPanelWithToken({
       onTitleUpdated={onTitleUpdated}
       onNotesUpdated={onNotesUpdated}
       onTimeSummaryChange={onTimeSummaryChange}
+      onPlannedMinutesUpdated={onPlannedMinutesUpdated}
     />
   );
 }

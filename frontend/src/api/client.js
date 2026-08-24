@@ -233,6 +233,19 @@ export function removeTaskShare(idToken, taskId, shareId) {
   return request(`/tasks/${taskId}/shares/${shareId}`, { method: 'DELETE', idToken });
 }
 
+// --- Comments (US-019) ---
+// Shared (not privacy-scoped) list, unlike time-entries — every caller with
+// task access (owner/collaborator/viewer) sees the identical list. Only
+// GET/POST exist this pass — no edit/delete endpoint (US-019 AC10).
+
+export function listTaskComments(idToken, taskId) {
+  return request(`/tasks/${taskId}/comments`, { idToken });
+}
+
+export function createTaskComment(idToken, taskId, { body }) {
+  return request(`/tasks/${taskId}/comments`, { method: 'POST', idToken, body: { body } });
+}
+
 // --- Profile & competencies (AUTH-004..AUTH-007) ---
 
 // PATCH /users/me — partial profile update. `updateProfile`'s `publicName`

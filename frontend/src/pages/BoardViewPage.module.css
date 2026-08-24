@@ -227,7 +227,8 @@
 }
 
 .attachmentBadge,
-.timeBadge {
+.timeBadge,
+.plannedBadge {
   display: inline-block;
   font-size: 0.75rem;
   color: var(--color-text-muted);
