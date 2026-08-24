@@ -30,7 +30,7 @@
 | AUTH-005 | Додавання компетенцій з передвизначеного списку | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_Competencies, DB_UserCompetencies |
 | AUTH-006 | Довільна компетенція вручну (custom competency) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_UserCompetencies |
 | AUTH-007 | Перемикач готовності викладати (per-competency) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_UserCompetencies |
-| AUTH-008 | Перемикач мови (EN/UK) у верхньому меню | 🔧 У розробці | 2026-08-24 | FE_i18n, FE_ProfilePage, BE_UsersMe, DB_Users |
+| AUTH-008 | Перемикач мови (EN/UK) у верхньому меню | ✅ Готово (пройшло code review) | 2026-08-24 | FE_AppHeader, FE_i18n, FE_ProfilePage, BE_UsersMe, DB_Users |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---

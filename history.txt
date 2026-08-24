@@ -379,3 +379,53 @@ PROJECT_MAP.md — історія змін
     цього доповнення AC.
   Коміт: docs: update USER_STORIES.md — description/notes додано в AC
     US-002/US-003/US-006 (без зміни статусу)
+
+2026-08-24 — Перемикач мови EN/UK у AppHeader (AUTH-008): done
+  Підсумок від business-analyst (2 проходи) + tester (2 проходи, фінальний
+    PASS по всіх 11 AC) + code-reviewer (Approve with comments, коміт
+    2dfad58):
+    - BE: PATCH /api/v1/users/me розширено опційним locale (той самий
+      частковий-апдейт патерн, що й publicName з AUTH-004 AC8), нова
+      помилка валідації errors.profile.localeInvalid для непідтримуваного
+      коду. Ендпоінта не додано — розширення вже наявного users.service.js.
+    - FE: новий компонент frontend/src/components/AppHeader.jsx доповнено
+      перемикачем мови (будується з реєстру підтримуваних локалей,
+      без хардкоду на дві конкретні мови — AC2), видимий на всіх
+      автентифікованих екранах, відсутній на /auth (AC10). Новий хук
+      frontend/src/i18n/useLocaleSync.js — one-shot ре-адопція збереженого
+      users.locale при reload/новій вкладці для вже автентифікованої
+      сесії, фіксить F5 locale-desync баг, знайдений tester на першому
+      проході. frontend/src/i18n/I18nProvider.jsx і frontend/src/App.jsx
+      оновлені для інтеграції хука.
+    - Продуктове рішення (узгоджене з користувачем до реалізації, той
+      самий прецедент, що й AUTH-003/AUTH-004…007): перемикач переїхав
+      з раніше запланованого /profile у спільну шапку AppHeader — CLAUDE.md
+      оновлено одночасно (розділ "Локалізація" і п.5 "User profile").
+    - Локалізація: повні EN/UK ключі app.header.language.*,
+      errors.profile.localeInvalid.
+    - Рев'ю: Approve with comments (без блокерів) — теоретичне
+      (невідтворюване) race-вікно в порівнянні ref у useLocaleSync,
+      зайвий GET /users/me одразу після sign-in, неочищений setTimeout
+      у toast помилки синхронізації в AppHeader.
+  Додано новий вузол (Рядок 1 — Auth/i18n/Infra): FE_AppHeader — 🟩 done,
+    з'єднаний з FE_i18n, BE_UsersMe, FE_ProfilePage (посилання на профіль
+    у шапці). Показаний лише в Рядку 1 (не дубльований у Рядках 2/3,
+    на відміну від Infra_MinIO/FE_SharePanel) — фактичне використання
+    з FE_Boards/FE_BoardView/FE_TaskPanel зафіксовано текстом у
+    "Примітки", щоб не подрібнювати карту зайвим дублюванням одного
+    UI-фрагмента шапки.
+  Позначено done: FE_ProfilePage (з 🟨 progress) — мітка "(перемикач
+    мови: planned)" знята, оскільки UI свідомо переїхав у AppHeader
+    (рішення про розміщення, не про реалізацію на старому місці); це
+    знімає застереження із запису про фічу "Профіль користувача" вище.
+    BE_UsersMe лишається done, опис розширено (+ locale в PATCH).
+  Не чіпалося: DB_Users (колонка locale існувала з AUTH-001…003, схема
+    без змін), Рядки 2 і 3 (жодного вузла/звʼязку).
+  Нових "відомих прогалин" не залоговано — усі зауваження рев'юера
+    non-blocking, зафіксовані текстом у "Примітки" для прозорості.
+  USER_STORIES.md: AUTH-008 переведено з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", колонка "Карта" заповнена
+    реальними вузлами (FE_AppHeader, FE_i18n, FE_ProfilePage, BE_UsersMe,
+    DB_Users) замість попередніх placeholder-ів, дата лишена 2026-08-24.
+  Коміт: docs: update PROJECT_MAP.md — перемикач мови EN/UK у AppHeader
+    (AUTH-008) позначено done, FE_ProfilePage доведено до done
