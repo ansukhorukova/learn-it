@@ -68,7 +68,8 @@
       "Bash(curl -s -i -X POST __TRACKED_VAR__/tasks/__TRACKED_VAR__/attachments -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -F kind=file -F 'file=@/tmp/evil.svg;type=image/svg+xml')",
       "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' -X DELETE __TRACKED_VAR__/boards/__TRACKED_VAR__ -H 'Authorization: Bearer __CMDSUB_OUTPUT__')",
       "Bash(python3 -c \"import json; json.load\\(open\\('frontend/src/locales/en.json'\\)\\); json.load\\(open\\('frontend/src/locales/uk.json'\\)\\); print\\('OK'\\)\")",
-      "Bash(curl -s -X PATCH __TRACKED_VAR__/tasks/__TRACKED_VAR__ -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"title\":\"Renamed Task Title\"}')"
+      "Bash(curl -s -X PATCH __TRACKED_VAR__/tasks/__TRACKED_VAR__ -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -H 'Content-Type: application/json' -d '{\"title\":\"Renamed Task Title\"}')",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('auth', d\\), indent=2, ensure_ascii=False\\)\\)\")"
     ],
     "additionalDirectories": [
       "/tmp"
