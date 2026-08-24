@@ -290,6 +290,78 @@ PROJECT_MAP.md — історія змін
   Коміт: docs: update PROJECT_MAP.md — Board/task description у FE
     задокументовано (без зміни статусів вузлів)
 
+2026-08-24 — Профіль користувача (AUTH-004…AUTH-007: public_name,
+  компетенції з довідника + custom, per-competency "готовий викладати"):
+  done
+  Підсумок від fullstack-developer + tester (PASS по всіх 4 story) +
+    code-reviewer (Approve with comments, коміт fdc7421):
+    - BE: PATCH /api/v1/users/me (users.service.js: updateProfile) —
+      часткове оновлення, лише publicName; порожній/whitespace рядок і
+      явний null трактуються однаково як скид у NULL (фолбек на
+      display_name), понад 100 символів → 400
+      errors.profile.publicNameTooLong. Нові backend/src/routes/
+      competencies.route.js (GET /api/v1/competencies — активний
+      довідник) і backend/src/services/competencies.service.js
+      (listActiveCompetencies, listUserCompetencies, addUserCompetency,
+      updateWillingToTeach, removeUserCompetency) з ендпоінтами
+      GET/POST /users/me/competencies, PATCH/DELETE
+      /users/me/competencies/:id. Anti-enumeration: чужий/неіснуючий
+      :id на PATCH/DELETE → 404 errors.competency.notFound, ніколи 403
+      (той самий патерн, що вже в timeEntries.service.js). Три нові
+      Knex-міграції: add_public_name_to_users, create_competencies_table
+      (засіджена 6 slug'ами), create_user_competencies_table
+      (UNIQUE(user_id, competency_id) як concurrency-бекстоп проти
+      дублю з довідника; NULL competency_id для custom-записів не
+      конфліктує — дублі custom дозволені за задумом AUTH-006 AC7).
+      Побічний ефект на вже done-вузлах шерингу: boardMembers.service.js
+      і taskShares.service.js (toMember/toShare) тепер віддають
+      public_name || display_name замість завжди display_name.
+    - FE: новий екран frontend/src/pages/ProfilePage.jsx (/profile) —
+      редагування public_name (з read-only display_name поруч),
+      мультиселект-піклер компетенцій з довідника + опція "Інше" для
+      custom-тексту, перемикач "готовий викладати" на кожній
+      компетенції з лічильником "N з M". Пункт навігації в AppHeader.jsx
+      (app.nav.profile) веде на /profile.
+    - Локалізація: повні EN/UK ключі profile.*, competency.<slug> для
+      6 засіджених slug'ів, errors.profile.*, errors.competency.* —
+      включно з ICU plural на лічильниках компетенцій/"готовий
+      викладати".
+    - Рев'ю: Approve with comments — єдине зауваження: новий п.5
+      "User profile" у CLAUDE.md (розділ "Екрани") згадує перемикач
+      мови як частину екрана /profile, але він не реалізований у
+      цьому проході (успадковане з розділу "Локалізація" формулювання,
+      перенесене в опис екрана завчасно, не нова недороблена робота).
+  Додано нові вузли (Рядок 1 — Auth/i18n/Infra):
+    - FE_ProfilePage — замінив попередню planned-заглушку FE_Settings
+      ("профіль, перемикач мови"); позначений 🟨 progress, НЕ done —
+      сам профіль (public_name + компетенції + willing-to-teach)
+      повністю готовий і заапрувений, але перемикач мови (друга
+      половина зі старої заглушки) досі не збудований, тому вузол не
+      можна чесно позначити done. З'єднано з FE_i18n, BE_UsersMe,
+      BE_Competencies.
+    - BE_Competencies — /competencies + /users/me/competencies CRUD.
+      З'єднано з новими DB_Competencies, DB_UserCompetencies.
+    - DB_Competencies, DB_UserCompetencies — нові таблиці, обидві done;
+      додані і в Рядок 1, і в окрему ER-схему БД (таблиці горизонтально,
+      FK — user_competencies --> users і user_competencies --> (nullable)
+      competencies — вертикально).
+  Розширено без зміни статусу (лишаються done): BE_UsersMe (додано
+    PATCH /users/me до опису), DB_Users (додано колонку public_name).
+  Публічно не позначено на графі, лише текстом у "Примітки": контрактне
+    розширення BE_BoardMembers/BE_TaskShares (public_name-фолбек) —
+    міжрядкова стрілка до DB_Users навмисно не додана (Рядок 1 і Рядок
+    2/3 залишаються без перетинних звʼязків за design-принципом карти).
+  Нових "відомих прогалин" не залоговано окремим пунктом — недобудований
+    перемикач мови зафіксований прямо в статусі/лейблі FE_ProfilePage
+    і в тексті "Примітки", щоб карта не вводила в оману.
+  USER_STORIES.md: AUTH-004…AUTH-007 переведені з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", колонка "Карта" заповнена
+    (FE_ProfilePage, BE_UsersMe/BE_Competencies, DB_Users/DB_Competencies/
+    DB_UserCompetencies залежно від story), дата лишена 2026-08-24.
+  Коміт: docs: update PROJECT_MAP.md — Профіль користувача
+    (AUTH-004..007) позначено з новими вузлами, FE_ProfilePage — progress
+    (перемикач мови не реалізований)
+
 2026-08-24 (уточнення) — Board/task description у FE: USER_STORIES.md
   дооновлено після рішення координатора
   Рішення координатора (варіант 1): опис/notes-поле додано як acceptance

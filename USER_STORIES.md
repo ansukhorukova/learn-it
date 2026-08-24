@@ -26,10 +26,10 @@
 | US-015 | Collaborator редагує вміст спільного борду | ✅ Готово (пройшло code review) | 2026-08-24 | BE_Tasks, BE_Attachments, BE_BoardMembers |
 | US-016 | Viewer має read-only доступ і приватний трекінг часу | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, BE_BoardMembers |
 | US-017 | Цілісність даних і edge cases шерингу | ✅ Готово (пройшло code review) | 2026-08-24 | BE_BoardMembers, BE_TaskShares, DB_BoardMembers, DB_TaskShares |
-| AUTH-004 | Перегляд/редагування профілю — публічне ім'я (public_name) | 🔧 У розробці | 2026-08-24 | BE_Users, FE_ProfilePage |
-| AUTH-005 | Додавання компетенцій з передвизначеного списку | 🔧 У розробці | 2026-08-24 | BE_Competencies, DB_Competencies, FE_ProfilePage |
-| AUTH-006 | Довільна компетенція вручну (custom competency) | 🔧 У розробці | 2026-08-24 | BE_Competencies, FE_ProfilePage |
-| AUTH-007 | Перемикач готовності викладати (per-competency) | 🔧 У розробці | 2026-08-24 | BE_Competencies, FE_ProfilePage |
+| AUTH-004 | Перегляд/редагування профілю — публічне ім'я (public_name) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_UsersMe, DB_Users |
+| AUTH-005 | Додавання компетенцій з передвизначеного списку | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_Competencies, DB_UserCompetencies |
+| AUTH-006 | Довільна компетенція вручну (custom competency) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_UserCompetencies |
+| AUTH-007 | Перемикач готовності викладати (per-competency) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_ProfilePage, BE_Competencies, DB_UserCompetencies |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
