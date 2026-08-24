@@ -38,7 +38,14 @@ step "Повнота локалізації EN/UK"
 node scripts/i18n-check.js || FAIL=1
 
 step "Секрети у застейджених файлах (базова перевірка)"
-if git diff --cached --name-only 2>/dev/null | xargs -r grep -lE "(AIza[0-9A-Za-z_-]{35}|-----BEGIN (RSA |EC )?PRIVATE KEY-----|sk_live_[0-9a-zA-Z]{24,})" 2>/dev/null; then
+# `xargs -r` (skip the command entirely on empty stdin) is a GNU-ism that
+# BSD/macOS xargs silently ignores as an unknown flag — with nothing staged,
+# BSD xargs still runs no command but exits 0, which a bare `if git diff |
+# xargs grep` misreads as "grep succeeded" (i.e. a secret was found), a false
+# positive on every clean working tree on macOS. Guard on whether there are
+# any staged files first instead of relying on xargs' empty-input behavior.
+STAGED_FILES="$(git diff --cached --name-only 2>/dev/null)"
+if [ -n "$STAGED_FILES" ] && echo "$STAGED_FILES" | xargs grep -lE "(AIza[0-9A-Za-z_-]{35}|-----BEGIN (RSA |EC )?PRIVATE KEY-----|sk_live_[0-9a-zA-Z]{24,})" 2>/dev/null; then
   echo "  ❌ Схоже на секрет у застейджених файлах — див. вище"
   FAIL=1
 else

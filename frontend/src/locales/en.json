@@ -3,6 +3,15 @@
     "name": "Learning Time Tracker",
     "nav": {
       "profile": "Profile"
+    },
+    "header": {
+      "language": {
+        "groupLabel": "Language",
+        "switchTo": "Switch to {language}",
+        "en": "English",
+        "uk": "Ukrainian",
+        "syncError": "Couldn't save your language preference. It will stay active for this session."
+      }
     }
   },
   "common": {
@@ -349,7 +358,8 @@
       "rateLimited": "Too many requests. Please try again later."
     },
     "profile": {
-      "publicNameTooLong": "Public name must be 100 characters or fewer."
+      "publicNameTooLong": "Public name must be 100 characters or fewer.",
+      "localeInvalid": "Unsupported language."
     },
     "competency": {
       "alreadyAdded": "You've already added this competency.",

@@ -38,7 +38,7 @@ function GoogleIcon() {
 }
 
 function AuthPage() {
-  const { t, locale } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuthUser();
 
@@ -110,7 +110,17 @@ function AuthPage() {
   async function completeSignIn(firebaseUser) {
     try {
       const idToken = await firebaseUser.getIdToken();
-      await fetchCurrentUser(idToken, locale);
+      const profile = await fetchCurrentUser(idToken, locale);
+      // AUTH-008 AC7/AC8: adopt the persisted `users.locale` from the BE —
+      // for a returning user this may differ from the browser-detected
+      // locale I18nProvider started from at app boot (e.g. they switched it
+      // via the header last session, then opened the app on a different
+      // device/browser locale); for a brand-new user this is exactly the
+      // browser locale the BE just seeded the row with (see `locale` query
+      // param above), so it's a no-op in that case. Either way, browser
+      // locale is never re-derived after first sign-in — only this
+      // persisted value going forward.
+      setLocale(profile.locale);
     } catch (err) {
       setFormErrorKey('auth.error.networkError');
       setSubmitting(false);

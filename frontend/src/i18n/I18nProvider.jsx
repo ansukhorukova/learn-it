@@ -6,10 +6,14 @@ import { translate } from './translate';
 const I18nContext = createContext(null);
 
 export function I18nProvider({ children }) {
-  // No account/persisted preference exists yet at app boot, so we always
+  // No account/persisted preference is known yet at app boot, so we always
   // start from the browser-detected locale (CLAUDE.md: "за browser locale
-  // користувача при першому вході"). A later profile-settings screen will
-  // let the user override this and persist it server-side on `users.locale`.
+  // користувача при першому вході"). AppHeader lets the user override this
+  // client-side immediately; App.jsx's useLocaleSync hook (and, on the
+  // explicit sign-in path, AuthPage.jsx's completeSignIn) is what corrects
+  // this initial guess to the persisted `users.locale` once it's known —
+  // see useLocaleSync.js for why a plain useState here is never re-derived
+  // from the browser on its own after that.
   const [locale, setLocale] = useState(() => detectBrowserLocale());
 
   useEffect(() => {

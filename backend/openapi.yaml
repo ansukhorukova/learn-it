@@ -79,13 +79,16 @@ paths:
     patch:
       summary: Partially update the current user's profile
       description: >
-        AUTH-004. This pass recognizes only `publicName` — any other field in
-        the request body is ignored, and OMITTING `publicName` entirely
-        leaves it unchanged (partial update, not a full profile replace).
-        Sending `publicName: null` (or an empty/whitespace-only string)
-        explicitly resets it to `null`, which is a deliberate, valid action
-        (falls back to `displayName` wherever this user is shown to others),
-        not a validation error.
+        AUTH-004 `publicName` + AUTH-008 `locale`. Every field is optional —
+        OMITTING a field entirely leaves that column unchanged (partial
+        update, not a full profile replace). Sending `publicName: null` (or
+        an empty/whitespace-only string) explicitly resets it to `null`,
+        which is a deliberate, valid action (falls back to `displayName`
+        wherever this user is shown to others), not a validation error.
+        Sending `locale` persists the FE header language switcher's choice
+        (AUTH-008 AC4) — must be one of the registered supported codes
+        (currently `en`/`uk`); the two fields update independently of one
+        another in the same request.
       operationId: updateCurrentUser
       tags: [users]
       security:
@@ -104,7 +107,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/UserProfile'
         '400':
-          description: '`publicName` longer than 100 characters (`errors.profile.publicNameTooLong`)'
+          description: >
+            `publicName` longer than 100 characters
+            (`errors.profile.publicNameTooLong`), or `locale` outside the
+            registered supported codes (`errors.profile.localeInvalid`,
+            AUTH-008 AC6) — `users.locale` is left unchanged in that case.
           content:
             application/json:
               schema:
@@ -1865,7 +1872,8 @@ components:
       type: object
       description: >
         Partial update — every field is optional; an OMITTED field is left
-        unchanged (AUTH-004 AC8). This pass only recognizes `publicName`.
+        unchanged (AUTH-004 AC8, AUTH-008 AC4). Recognizes `publicName` and
+        `locale`, updated independently of one another.
       properties:
         publicName:
           type: string
@@ -1875,6 +1883,15 @@ components:
             An explicit `null` (or an empty/whitespace-only string) resets to
             the displayName fallback (AC3) — not a validation error. Over 100
             characters (after trim) is 400 `errors.profile.publicNameTooLong`.
+        locale:
+          type: string
+          description: >
+            AUTH-008 — the FE header language switcher's active locale.
+            Must be one of the registered supported codes (currently
+            `en`/`uk`); any other value is 400
+            `errors.profile.localeInvalid` and leaves `users.locale`
+            unchanged.
+          example: uk
 
     Competency:
       type: object

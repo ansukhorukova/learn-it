@@ -25,9 +25,10 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 });
 
-// PATCH /api/v1/users/me — partial profile update (AUTH-004). This pass only
-// recognizes `publicName`; see users.service.js's updateProfile for the
-// "omitted field = untouched" contract (AC8).
+// PATCH /api/v1/users/me — partial profile update: `publicName` (AUTH-004)
+// and `locale` (AUTH-008). See users.service.js's updateProfile for the
+// "omitted field = untouched" contract (AUTH-004 AC8, extended to `locale`
+// by AUTH-008 AC4) and the `locale` validation (AUTH-008 AC6).
 router.patch('/me', requireAuth, async (req, res) => {
   try {
     const profile = await updateProfile(req.firebaseUser.uid, req.body || {});

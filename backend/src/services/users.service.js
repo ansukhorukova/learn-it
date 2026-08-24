@@ -1,5 +1,5 @@
 const db = require('../db/knex');
-const { resolveLocale } = require('../config/locales');
+const { SUPPORTED_LOCALES, resolveLocale } = require('../config/locales');
 const { ValidationError } = require('../lib/serviceErrors');
 
 // AUTH-004 AC4.
@@ -104,22 +104,44 @@ function validatePublicName(value) {
 }
 
 /**
- * Partial update of the caller's own profile (AUTH-004). This pass only
- * recognizes `publicName` — any other key in the body (e.g. a future
- * `locale` field) is silently ignored, and OMITTING `publicName` entirely
- * leaves the column untouched (AC8: "PATCH ... без поля public_name ...
- * лишається незмінним"), same "undefined vs explicit value" convention
- * already used throughout timeEntries.service.js's updateTimeEntry.
+ * Validates a candidate `locale` (AUTH-008 AC6): must be one of the
+ * registered supported codes (`backend/src/config/locales.js`, the same
+ * registry `resolveLocale`/`getOrCreateUser` use) — reused here rather than
+ * hardcoding `['en', 'uk']` again, so a future third locale only needs
+ * registering in one place. Unlike `resolveLocale` (which silently falls
+ * back to the default for an unrecognized code — appropriate for the
+ * best-effort browser-detected seed on first sign-in), an explicit PATCH
+ * with an unsupported code is a hard validation error, not a silent
+ * fallback.
+ */
+function validateLocale(value) {
+  if (!SUPPORTED_LOCALES.includes(value)) {
+    throw new ValidationError('errors.profile.localeInvalid');
+  }
+  return value;
+}
+
+/**
+ * Partial update of the caller's own profile (AUTH-004 `publicName`,
+ * AUTH-008 `locale`). Any other key in the body is silently ignored, and
+ * OMITTING a recognized field entirely leaves that column untouched (AC8:
+ * "PATCH ... без поля public_name ... лишається незмінним", same contract
+ * now extended to `locale` per AUTH-008 AC4), same "undefined vs explicit
+ * value" convention already used throughout timeEntries.service.js's
+ * updateTimeEntry.
  *
  * `userId` is always `req.firebaseUser.uid` from an already-verified token
  * (CLAUDE.md: BE is the single point of authorization) — there is no id
  * parameter here for a caller to substitute another user's id, unlike
  * every other resource in this codebase that takes a route `:id`.
  */
-async function updateProfile(userId, { publicName } = {}) {
+async function updateProfile(userId, { publicName, locale } = {}) {
   const patch = {};
   if (publicName !== undefined) {
     patch.public_name = validatePublicName(publicName);
+  }
+  if (locale !== undefined) {
+    patch.locale = validateLocale(locale);
   }
 
   if (Object.keys(patch).length === 0) {

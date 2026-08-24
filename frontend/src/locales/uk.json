@@ -3,6 +3,15 @@
     "name": "Learning Time Tracker",
     "nav": {
       "profile": "Профіль"
+    },
+    "header": {
+      "language": {
+        "groupLabel": "Мова",
+        "switchTo": "Переключити на {language}",
+        "en": "Англійська",
+        "uk": "Українська",
+        "syncError": "Не вдалося зберегти вибір мови. Він залишиться активним для цієї сесії."
+      }
     }
   },
   "common": {
@@ -357,7 +366,8 @@
       "rateLimited": "Забагато запитів. Спробуйте пізніше."
     },
     "profile": {
-      "publicNameTooLong": "Публічне ім'я має містити не більше 100 символів."
+      "publicNameTooLong": "Публічне ім'я має містити не більше 100 символів.",
+      "localeInvalid": "Непідтримувана мова."
     },
     "competency": {
       "alreadyAdded": "Ви вже додали цю компетенцію.",
