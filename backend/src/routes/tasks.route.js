@@ -7,6 +7,7 @@ const { ValidationError } = require('../lib/serviceErrors');
 const tasksService = require('../services/tasks.service');
 const attachmentsService = require('../services/attachments.service');
 const timeEntriesService = require('../services/timeEntries.service');
+const taskSharesService = require('../services/taskShares.service');
 
 const router = express.Router();
 
@@ -46,6 +47,22 @@ function parseAttachmentUpload(req, res) {
     });
   });
 }
+
+// GET /api/v1/tasks/:id — single task detail (new, US13-US17). The read
+// path a task_shares-only recipient actually needs: GET
+// /boards/:id/tasks (board view) is board-level access only (US14 — a
+// task-level share must never leak the rest of the board), so someone who
+// was only ever shared this one task has no other way to fetch it. Any
+// effective role (viewer+) can read; `myRole` on the response tells the FE
+// which one so it can gate write UI.
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const task = await tasksService.getTaskForUser(req.params.id, req.firebaseUser.uid);
+    res.json(task);
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
 
 // PATCH /api/v1/tasks/:id — title and/or status+position (drag-and-drop and
 // its accessible fallback control both call this, US8). Ownership is
@@ -194,6 +211,60 @@ router.patch('/:id/time-entries/:entryId', requireAuth, async (req, res) => {
 router.delete('/:id/time-entries/:entryId', requireAuth, async (req, res) => {
   try {
     await timeEntriesService.deleteTimeEntry(req.params.id, req.params.entryId, req.firebaseUser.uid);
+    res.status(204).end();
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// task_shares CRUD (US14) — sharing ONE task by email, without granting
+// access to the rest of its board. Owner-of-the-parent-board-only on every
+// route below (taskSharesService, via lib/authz.js's requireTaskOwner) — a
+// collaborator (board- or task-level) gets errors.task.ownerOnly, never a
+// bare 403 with no explanation (US15/US17).
+
+// GET /api/v1/tasks/:id/shares — list a task's shares.
+router.get('/:id/shares', requireAuth, async (req, res) => {
+  try {
+    const shares = await taskSharesService.listShares(req.params.id, req.firebaseUser.uid);
+    res.json({ shares });
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// POST /api/v1/tasks/:id/shares — share the task with an email (US14).
+// Re-sharing an already-shared email is idempotent: it updates their role
+// rather than erroring (US17 duplicate-share decision, see
+// taskShares.service.js's addShare).
+router.post('/:id/shares', requireAuth, async (req, res) => {
+  try {
+    const share = await taskSharesService.addShare(req.params.id, req.firebaseUser.uid, req.body || {});
+    res.status(201).json(share);
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// PATCH /api/v1/tasks/:id/shares/:shareId — change a share's role.
+router.patch('/:id/shares/:shareId', requireAuth, async (req, res) => {
+  try {
+    const share = await taskSharesService.updateShareRole(
+      req.params.id,
+      req.params.shareId,
+      req.firebaseUser.uid,
+      req.body || {},
+    );
+    res.json(share);
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// DELETE /api/v1/tasks/:id/shares/:shareId — revoke a share.
+router.delete('/:id/shares/:shareId', requireAuth, async (req, res) => {
+  try {
+    await taskSharesService.removeShare(req.params.id, req.params.shareId, req.firebaseUser.uid);
     res.status(204).end();
   } catch (err) {
     sendServiceError(res, err);

@@ -145,13 +145,19 @@ paths:
     get:
       summary: List the current user's boards
       description: >
-        Boards overview (US1). Scoped strictly to boards owned by the caller
-        — no "shared with me" boards, since sharing doesn't exist yet.
+        Boards overview (US1). Still scoped strictly to boards owned by the
+        caller — a "shared with me" section is explicitly out of scope for
+        the US13-US17 pass that added `board_members`/`task_shares`; a
+        shared board is reachable directly via `GET /boards/{id}` once its
+        id is known (e.g. a link from the sharer), just not listed here yet.
         `taskCount` is computed live via COUNT, never denormalized.
         `totalSeconds`/`thisWeekSeconds` (US12) are the caller's own tracked
         time across every task on the board — all-time and since the current
         calendar week's Monday 00:00 UTC boundary, respectively — computed
-        live, never denormalized.
+        live, never denormalized. `myRole` (US13-US17) is always `owner` on
+        this endpoint specifically, since it only ever lists boards the
+        caller owns — see `GET /boards/{id}` for a board where it can be
+        `collaborator`/`viewer`.
       operationId: listBoards
       tags: [boards]
       security:
@@ -214,7 +220,13 @@ paths:
           format: uuid
     get:
       summary: Get a single board
-      description: Used by the board view header (US5).
+      description: >
+        Used by the board view header (US5). Since US13-US17, reachable by a
+        shared board's collaborator/viewer too, not just the owner — access
+        requires ANY effective board-level role (`board_members`, or owner);
+        `myRole` on the response tells the FE which one so it can gate
+        write UI (e.g. hide "add task" for a viewer) without a second
+        request.
       operationId: getBoard
       tags: [boards]
       security:
@@ -229,7 +241,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The board exists but belongs to another user
+          description: The board exists but the caller has no board-level access to it
           content:
             application/json:
               schema:
@@ -245,10 +257,12 @@ paths:
     patch:
       summary: Rename / update a board
       description: >
-        Rename board (US3). Ownership is re-checked server-side on every
-        call — 403 for a non-owner even if they somehow guess a valid board
-        id, defense-in-depth even though there's no sharing UI yet to expose
-        this path.
+        Rename board (US3). Owner-only — re-checked server-side on every
+        call, distinguishing a non-owner with no board access at all (403
+        `errors.board.forbidden`) from a collaborator/viewer who has access
+        but isn't the owner (403 `errors.board.ownerOnly`, US15: board
+        settings/rename stays owner-only even for a collaborator who can
+        otherwise edit tasks/attachments).
       operationId: updateBoard
       tags: [boards]
       security:
@@ -275,7 +289,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The board exists but belongs to another user
+          description: >
+            No board access at all (`errors.board.forbidden`), or a
+            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
           content:
             application/json:
               schema:
@@ -292,7 +308,12 @@ paths:
       summary: Delete a board
       description: >
         Delete board (US4), irreversible. Cascades to all tasks under it at
-        the DB level (`tasks.board_id` is `ON DELETE CASCADE`).
+        the DB level (`tasks.board_id` is `ON DELETE CASCADE`), which
+        transitively cascades `board_members`/`task_shares`/`attachments`
+        too (US17: full cascade — deleting a board never leaves orphaned
+        membership/share/attachment rows). Owner-only (US15: "collaborator
+        НЕ може видалити борд") — same `errors.board.forbidden` vs
+        `errors.board.ownerOnly` distinction as `PATCH` above.
       operationId: deleteBoard
       tags: [boards]
       security:
@@ -303,7 +324,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The board exists but belongs to another user
+          description: >
+            No board access at all (`errors.board.forbidden`), or a
+            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
           content:
             application/json:
               schema:
@@ -333,7 +356,15 @@ paths:
         it (completed sessions + a running timer's live elapsed time, if
         any). `columnTotals`/`boardTotalSeconds` (US12 AC5) sum that same
         per-task value by column and across the whole board — all computed
-        live, never denormalized.
+        live, never denormalized. Requires board-level access (owner or
+        `board_members`) — deliberately does NOT also accept a `task_shares`
+        -only grant (US14: listing every task on the board would leak the
+        rest of it to someone who was only ever shared one task; they fetch
+        that task via `GET /tasks/{id}` instead). Top-level `myRole`
+        (US13-US17) is the caller's board-level role; each task's own
+        `myRole` is its effective role, which can be MORE permissive than
+        the board-level one if that specific task also has a `task_shares`
+        row for the caller (see the Task schema's `myRole` note).
       operationId: listBoardTasks
       tags: [tasks]
       security:
@@ -364,11 +395,19 @@ paths:
                   boardTotalSeconds:
                     type: integer
                     description: Sum of `totalSeconds` across every task on the board, for the caller's own time only.
-                required: [tasks, columnTotals, boardTotalSeconds]
+                  myRole:
+                    type: string
+                    enum: [owner, collaborator, viewer]
+                    description: The caller's board-level effective role (US13-US17). See each task's own `myRole` for a possible per-task override.
+                required: [tasks, columnTotals, boardTotalSeconds, myRole]
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The board exists but belongs to another user
+          description: >
+            No board-level access at all (`errors.board.forbidden`), or
+            access below `viewer` (`errors.board.readOnlyAccess` — not
+            currently reachable since `viewer` is the lowest role, kept for
+            forward compatibility).
           content:
             application/json:
               schema:
@@ -386,7 +425,11 @@ paths:
       description: >
         Create task (US6). Always created with `status: planned`, appended
         to the end of that column — `position` is assigned server-side, not
-        accepted from the client on create.
+        accepted from the client on create. Requires board-level
+        collaborator+ (US15/US16: a viewer can't create tasks — 403
+        `errors.board.readOnlyAccess`; no access at all is 403
+        `errors.board.forbidden`). Board-level only, like `GET` above — a
+        task doesn't exist yet for a `task_shares` grant to apply to.
       operationId: createTask
       tags: [tasks]
       security:
@@ -418,7 +461,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The board exists but belongs to another user
+          description: >
+            No board access at all (`errors.board.forbidden`), or a viewer
+            (`errors.board.readOnlyAccess`).
           content:
             application/json:
               schema:
@@ -441,6 +486,209 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /boards/{id}/members:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a board's members
+      description: >
+        board_members CRUD (US13). Owner-only, like every operation under
+        this path — a collaborator/viewer gets 403
+        `errors.board.ownerOnly` (US15: "collaborator НЕ може керувати
+        board_members").
+      operationId: listBoardMembers
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The board's members (not including the owner, who is never a row here)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BoardMember'
+                required: [members]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No board access at all (`errors.board.forbidden`), or a
+            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Share the board with an email
+      description: >
+        Add a board member by email, role `viewer` or `collaborator` (US13).
+        The email must belong to an already-registered user (looked up
+        against `users.email`) — inviting an unregistered email is out of
+        scope for this pass; no row is created and the request 404s
+        (`errors.share.userNotFound`).
+
+
+        **US17 duplicate-share decision**: re-sharing with an email that's
+        already a member is idempotent, not a 409 — it UPDATES that member's
+        role to whatever this request asked for
+        (`INSERT ... ON CONFLICT (board_id, user_id) DO UPDATE`), so "change
+        someone's role" and "share for the first time" are the same request.
+
+
+        **US17 self-share**: sharing with the board owner's own email is
+        rejected as 400 `errors.share.selfShare` — the owner is never a
+        `board_members` row.
+      operationId: addBoardMember
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareWriteRequest'
+      responses:
+        '201':
+          description: The created (or, on re-share, updated) member — 201 either way, see the duplicate-share decision above
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardMember'
+        '400':
+          description: Invalid email/role, or self-share
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No board access at all (`errors.board.forbidden`), or a
+            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id, or no user is registered with the given email (`errors.share.userNotFound`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /boards/{id}/members/{memberId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: memberId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Change a member's role
+      description: >
+        Owner-only. US17 concurrency: serializes against a concurrent
+        DELETE of the same member row via a row lock — if the member was
+        just removed by another request, this 404s
+        (`errors.share.memberNotFound`) instead of resurrecting it or racing.
+      operationId: updateBoardMemberRole
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareRoleWriteRequest'
+      responses:
+        '200':
+          description: The updated member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardMember'
+        '400':
+          description: Invalid role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No board access at all (`errors.board.forbidden`), or a
+            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id, or no member with this id on this board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Revoke a member's access
+      description: Owner-only. Same concurrency handling as `PATCH` above.
+      operationId: removeBoardMember
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No board access at all (`errors.board.forbidden`), or a
+            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No board with this id, or no member with this id on this board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /tasks/{id}:
     parameters:
       - name: id
@@ -449,6 +697,43 @@ paths:
         schema:
           type: string
           format: uuid
+    get:
+      summary: Get a single task
+      description: >
+        Task detail (added for US13-US17). The read path a `task_shares`-only
+        recipient actually needs: `GET /boards/{id}/tasks` requires
+        board-level access (owner or `board_members`), which a caller shared
+        only this one task never has — see the Task schema's `myRole` note
+        for the effective-role priority rule. Any effective role (viewer or
+        above) can read; owner/collaborator/viewer all resolve here the same
+        way they do on every other task endpoint.
+      operationId: getTask
+      tags: [tasks]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The task exists but the caller has no board- or task-level access to it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
     patch:
       summary: Update a task's title and/or status+position
       description: >
@@ -457,9 +742,23 @@ paths:
         zero-based target index within the destination column (`status`, if
         given, else the task's current column) — an ordering instruction,
         not the raw stored position value (an internal, automatically
-        reindexed implementation detail). Ownership is re-checked
-        server-side through the task's parent board on every call — 403 for
-        a non-owner.
+        reindexed implementation detail). Access is re-checked server-side
+        through the task's effective role on every call (US15/US16): owner
+        or collaborator (board- or task-level, whichever is more permissive —
+        see the Task schema's `myRole` note) can edit/move; a viewer gets
+        403 `errors.task.readOnlyAccess`; a caller with no access at all
+        (board or task) gets 403 `errors.task.forbidden`.
+
+
+        Changing `status`/`position` additionally requires board-level
+        access (owner, or a `board_members` row on the parent board) — a
+        caller whose only grant is a `task_shares` row on this exact task
+        gets 403 `errors.task.reorderRequiresBoardAccess` instead, even at
+        `collaborator` rank. Reindexing a column rewrites `position`/
+        `updated_at` on every OTHER task currently in the destination
+        column, which a task-share-only grant never gives read access to
+        (US14) — the title-only edit path is unaffected by this and stays
+        available to a task-share-only collaborator.
       operationId: updateTask
       tags: [tasks]
       security:
@@ -497,7 +796,12 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The task's board belongs to another user
+          description: >
+            No access at all (`errors.task.forbidden`), a viewer trying to
+            edit/move (`errors.task.readOnlyAccess`), or a task-share-only
+            collaborator/owner-rank caller trying to change `status`/
+            `position` (`errors.task.reorderRequiresBoardAccess`) — see the
+            operation description.
           content:
             application/json:
               schema:
@@ -521,7 +825,11 @@ paths:
           $ref: '#/components/responses/InternalError'
     delete:
       summary: Delete a task
-      description: Delete task (US7), irreversible.
+      description: >
+        Delete task (US7), irreversible. Same collaborator+ access rule as
+        `PATCH` above (US15: "редагувати" is read broadly enough to cover
+        delete — deleting a task isn't withheld from a collaborator the way
+        deleting the *board* is).
       operationId: deleteTask
       tags: [tasks]
       security:
@@ -532,7 +840,9 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: The task's board belongs to another user
+          description: >
+            No access at all (`errors.task.forbidden`), or a viewer trying
+            to delete (`errors.task.readOnlyAccess`).
           content:
             application/json:
               schema:
@@ -1064,6 +1374,204 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /tasks/{id}/shares:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List a task's shares
+      description: >
+        task_shares CRUD (US14) — sharing ONE task by email, WITHOUT
+        granting access to the rest of its board. Owner-of-the-PARENT-BOARD
+        -only, like every operation under this path — even a collaborator
+        with full edit rights on this exact task gets 403
+        `errors.task.ownerOnly` (US15: "collaborator НЕ може керувати
+        task_shares").
+      operationId: listTaskShares
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The task's shares
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shares:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaskShare'
+                required: [shares]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No access to the task at all (`errors.task.forbidden`), or
+            access that isn't the parent board's owner (`errors.task.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Share the task with an email
+      description: >
+        Add a task share by email, role `viewer` or `collaborator` (US14).
+        Same email-must-be-a-registered-user, idempotent-duplicate-share, and
+        self-share rules as `POST /boards/{id}/members` — see that
+        operation's description; the only difference is scope (this task
+        only, never the board) and who's authorized (the board owner, not a
+        collaborator on this task).
+      operationId: addTaskShare
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareWriteRequest'
+      responses:
+        '201':
+          description: The created (or, on re-share, updated) share — 201 either way
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskShare'
+        '400':
+          description: Invalid email/role, or self-share
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No access to the task at all (`errors.task.forbidden`), or
+            access that isn't the parent board's owner (`errors.task.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id, or no user is registered with the given email (`errors.share.userNotFound`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/shares/{shareId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: shareId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Change a share's role
+      description: >
+        Owner-of-the-parent-board-only. US17 concurrency: same row-locked
+        serialization against a concurrent DELETE of the same share as
+        `PATCH /boards/{id}/members/{memberId}` — see its description.
+      operationId: updateTaskShareRole
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareRoleWriteRequest'
+      responses:
+        '200':
+          description: The updated share
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskShare'
+        '400':
+          description: Invalid role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No access to the task at all (`errors.task.forbidden`), or
+            access that isn't the parent board's owner (`errors.task.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id, or no share with this id on this task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Revoke a share
+      description: >
+        Owner-of-the-parent-board-only. Note this is independent of
+        `board_members` — revoking a task share never affects that user's
+        board-level role, if they have one (US17 priority rule works in
+        both directions: it picks the more permissive of the two while both
+        exist, but removing one leaves the other, if any, untouched).
+      operationId: removeTaskShare
+      tags: [sharing]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            No access to the task at all (`errors.task.forbidden`), or
+            access that isn't the parent board's owner (`errors.task.ownerOnly`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id, or no share with this id on this task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   responses:
     Unauthorized:
@@ -1125,6 +1633,14 @@ components:
           description: Firebase UID of the owner
         taskCount:
           type: integer
+        myRole:
+          type: string
+          enum: [owner, collaborator, viewer]
+          description: >
+            The caller's effective role on this board (US13-US17): `owner`
+            (boards.owner_id), or their `board_members` role. Always `owner`
+            on `GET /boards` (list is scoped to boards the caller owns);
+            can be `collaborator`/`viewer` on `GET /boards/{id}`.
         totalSeconds:
           type: integer
           description: >
@@ -1141,7 +1657,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, title, description, accent, ownerId, taskCount, totalSeconds, thisWeekSeconds, createdAt, updatedAt]
+      required: [id, title, description, accent, ownerId, taskCount, myRole, totalSeconds, thisWeekSeconds, createdAt, updatedAt]
 
     BoardWriteRequest:
       type: object
@@ -1184,6 +1700,18 @@ components:
           description: >
             Live count of this task's attachments (US9) — computed via
             COUNT, never denormalized. Rendered as a badge on the task card.
+        myRole:
+          type: string
+          enum: [owner, collaborator, viewer]
+          description: >
+            The caller's EFFECTIVE role on this task (US13-US17): `owner`
+            (the parent board's owner_id), else the MORE PERMISSIVE of any
+            `board_members` role on the task's parent board and any
+            `task_shares` role for this exact task — e.g. a board-level
+            `viewer` who was additionally task-shared as `collaborator` on
+            this one task sees `collaborator` here (and `viewer` on every
+            other task on the board). A `task_shares` row never widens
+            access to the board itself or to any other task.
         totalSeconds:
           type: integer
           description: >
@@ -1197,7 +1725,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, boardId, title, notes, status, position, createdBy, attachmentCount, totalSeconds, createdAt, updatedAt]
+      required: [id, boardId, title, notes, status, position, createdBy, attachmentCount, myRole, totalSeconds, createdAt, updatedAt]
 
     Attachment:
       type: object
@@ -1331,6 +1859,89 @@ components:
           maxLength: 500
           nullable: true
           description: Optional. On PATCH, an explicit null clears an existing note.
+
+    BoardMember:
+      type: object
+      description: A board_members row (US13) — a non-owner's granted access to a whole board.
+      properties:
+        id:
+          type: string
+          format: uuid
+        boardId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: Firebase UID of the member (resolved server-side from the email given at share time).
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [viewer, collaborator]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, boardId, userId, email, displayName, role, createdAt, updatedAt]
+
+    TaskShare:
+      type: object
+      description: A task_shares row (US14) — a non-owner's granted access to ONE task, independent of board_members.
+      properties:
+        id:
+          type: string
+          format: uuid
+        taskId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: Firebase UID of the recipient (resolved server-side from the email given at share time).
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [viewer, collaborator]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, taskId, userId, email, displayName, role, createdAt, updatedAt]
+
+    ShareWriteRequest:
+      type: object
+      description: >
+        Used by both `POST /boards/{id}/members` and `POST
+        /tasks/{id}/shares` (US13/US14). `email` must belong to an
+        already-registered user — see each operation's description for the
+        404/idempotent-duplicate/self-share rules (US17).
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [viewer, collaborator]
+      required: [email, role]
+
+    ShareRoleWriteRequest:
+      type: object
+      description: Used by the role-change PATCH on both board_members and task_shares.
+      properties:
+        role:
+          type: string
+          enum: [viewer, collaborator]
+      required: [role]
 
     ApiError:
       type: object

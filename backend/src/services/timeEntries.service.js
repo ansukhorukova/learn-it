@@ -5,6 +5,14 @@ const { lockRow } = require('../lib/db');
 const { isUniqueViolation, isForeignKeyViolation } = require('../lib/dbErrors');
 const { getOwnedTaskWithBoard } = require('./tasks.service');
 
+// US16: every call below uses getOwnedTaskWithBoard's default `minRole:
+// 'viewer'` — a viewer (board- or task-level) has FULL access to their OWN
+// timer/time entries on a task they can see, same as a collaborator/owner.
+// This is intentionally not gated any tighter: CLAUDE.md's "прогрес завжди
+// приватний" invariant is enforced by every query below being scoped to
+// `user_id = ownerId` (never returning another user's rows), not by
+// withholding time-tracking from viewers.
+
 // Documented as the single source of truth for both client-side and
 // server-side validation errors, same pattern as attachments.service.js's
 // MAX_FILE_SIZE_BYTES.

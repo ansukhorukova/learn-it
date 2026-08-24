@@ -40,10 +40,11 @@ app.use('/api/v1/auth', authRouter);
 // as usersRouter above. tasksRouter also mounts /tasks/:id/attachments
 // (US9) and /tasks/:id/time-entries (US10-US12) — both nested here rather
 // than separate routers since the URL space is already owned by tasksRouter.
+// boardsRouter also mounts /boards/:id/members (US13 — board_members CRUD)
+// and tasksRouter also mounts /tasks/:id/shares (US14 — task_shares CRUD),
+// both nested here rather than separate routers, same reasoning as
+// attachments/time-entries above.
 app.use('/api/v1/boards', boardsRouter);
 app.use('/api/v1/tasks', tasksRouter);
-
-// TODO (future): mount /api/v1/*/members, /api/v1/*/shares once acceptance
-// criteria are in place. See CLAUDE.md "API" and "Дані" sections.
 
 module.exports = app;

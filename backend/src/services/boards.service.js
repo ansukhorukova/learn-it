@@ -1,6 +1,6 @@
 const db = require('../db/knex');
 const { ValidationError, NotFoundError } = require('../lib/serviceErrors');
-const { getOwnedBoard } = require('../lib/authz');
+const { getOwnedBoard, requireBoardRole } = require('../lib/authz');
 const { lockedUpdate } = require('../lib/db');
 const storage = require('../lib/storage');
 
@@ -34,6 +34,13 @@ function normalizeDescription(description) {
 // `taskCount` comes from a LEFT JOIN + COUNT, not a denormalized column on
 // `boards` — always accurate, no risk of drifting out of sync with the
 // `tasks` table as tasks are created/moved/deleted.
+//
+// `myRole` (US13-US17): the caller's effective role on this board. Defaults
+// to 'owner' when the caller didn't attach `row.my_role` — true for every
+// row from listBoardsForOwner (scoped to `owner_id = caller`, "shared with
+// me" listing is explicitly out of scope this pass, US13-US17 brief) and
+// for create/rename (both owner-only actions). getBoardForOwner below is the
+// one path that can return a non-owner role, and explicitly sets it.
 function toBoardSummary(row) {
   return {
     id: row.id,
@@ -42,6 +49,7 @@ function toBoardSummary(row) {
     accent: row.accent,
     ownerId: row.owner_id,
     taskCount: Number(row.task_count) || 0,
+    myRole: row.my_role || 'owner',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -76,10 +84,15 @@ async function countTasks(boardId) {
   return count;
 }
 
-async function getBoardForOwner(boardId, ownerId) {
-  const row = await getOwnedBoard(boardId, ownerId);
+// US13-US17: the board view header is now reachable by a shared board's
+// collaborator/viewer, not just the owner — `requireBoardRole(..., 'viewer')`
+// accepts any board_members role (or owner), and `myRole` on the response
+// tells the FE which one so it can gate write UI (e.g. hide "add task" for a
+// viewer) without a second request.
+async function getBoardForOwner(boardId, userId) {
+  const { board, role } = await requireBoardRole(boardId, userId, 'viewer');
   const taskCount = await countTasks(boardId);
-  return toBoardSummary({ ...row, task_count: taskCount });
+  return toBoardSummary({ ...board, task_count: taskCount, my_role: role });
 }
 
 async function updateBoard(boardId, ownerId, { title, description, accent } = {}) {

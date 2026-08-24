@@ -183,3 +183,52 @@ export function updateTimeEntry(idToken, taskId, entryId, payload) {
 export function deleteTimeEntry(idToken, taskId, entryId) {
   return request(`/tasks/${taskId}/time-entries/${entryId}`, { method: 'DELETE', idToken });
 }
+
+// --- Single task detail (US13-US17) ---
+
+// GET /tasks/:id — the read path a task_shares-only recipient needs (see
+// backend/src/routes/tasks.route.js's header comment): `listTasks` above
+// requires board-level access, which a task-only share never has. Not
+// currently called by any page (BoardViewPage always has the task from the
+// board's task list already), but exported for the future task-share-direct-
+// link flow ("Shared with me", out of scope this pass).
+export function getTask(idToken, taskId) {
+  return request(`/tasks/${taskId}`, { idToken });
+}
+
+// --- Sharing: board_members (US13) and task_shares (US14) ---
+// Both resources share the same shape ({ email, role } to add, { role } to
+// change) and the same owner-only authorization on the BE — see
+// boardMembers.service.js / taskShares.service.js.
+
+export function listBoardMembers(idToken, boardId) {
+  return request(`/boards/${boardId}/members`, { idToken });
+}
+
+export function addBoardMember(idToken, boardId, { email, role }) {
+  return request(`/boards/${boardId}/members`, { method: 'POST', idToken, body: { email, role } });
+}
+
+export function updateBoardMemberRole(idToken, boardId, memberId, { role }) {
+  return request(`/boards/${boardId}/members/${memberId}`, { method: 'PATCH', idToken, body: { role } });
+}
+
+export function removeBoardMember(idToken, boardId, memberId) {
+  return request(`/boards/${boardId}/members/${memberId}`, { method: 'DELETE', idToken });
+}
+
+export function listTaskShares(idToken, taskId) {
+  return request(`/tasks/${taskId}/shares`, { idToken });
+}
+
+export function addTaskShare(idToken, taskId, { email, role }) {
+  return request(`/tasks/${taskId}/shares`, { method: 'POST', idToken, body: { email, role } });
+}
+
+export function updateTaskShareRole(idToken, taskId, shareId, { role }) {
+  return request(`/tasks/${taskId}/shares/${shareId}`, { method: 'PATCH', idToken, body: { role } });
+}
+
+export function removeTaskShare(idToken, taskId, shareId) {
+  return request(`/tasks/${taskId}/shares/${shareId}`, { method: 'DELETE', idToken });
+}

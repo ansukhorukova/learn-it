@@ -1,7 +1,6 @@
 const db = require('../db/knex');
-const { isUuid } = require('../lib/uuid');
 const { ValidationError, NotFoundError, ForbiddenError, ConflictError } = require('../lib/serviceErrors');
-const { getOwnedBoard } = require('../lib/authz');
+const { requireBoardRole, requireTaskRole, higherRole } = require('../lib/authz');
 const { isUniqueViolation, isDeadlock } = require('../lib/dbErrors');
 const { lockRow, lockedUpdate } = require('../lib/db');
 const storage = require('../lib/storage');
@@ -24,6 +23,12 @@ const POSITION_GAP = 1000;
 // any other path in this file (create/update/delete, all single-task reads)
 // don't join attachments, so this defaults to 0 there rather than showing a
 // stale/wrong count.
+// `myRole` (US13-US17): the caller's effective role on this task — 'owner',
+// 'collaborator', or 'viewer' — present whenever the caller comes through
+// getOwnedTaskWithBoard/getTaskForUser (which attach it), absent (falls back
+// to 'owner') on rows from a plain owner-scoped write path that never
+// computed it. See lib/authz.js's higherRole for the board-vs-task-share
+// priority rule this reflects.
 function toTask(row) {
   return {
     id: row.id,
@@ -34,6 +39,7 @@ function toTask(row) {
     position: row.position,
     createdBy: row.created_by,
     attachmentCount: row.attachment_count !== undefined ? Number(row.attachment_count) || 0 : 0,
+    myRole: row.myRole || 'owner',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -51,24 +57,42 @@ function validateStatus(status) {
   return status;
 }
 
-// Tasks have no `owner_id` of their own — authorization is always derived
-// through the parent board's owner_id (CLAUDE.md: BE service layer is the
-// single point of authorization). This mirrors how board_members/task_shares
-// would extend this later without a schema change to `tasks` itself.
-// getOwnedBoard itself lives in lib/authz.js — shared with boards.service.js
-// so the ownership check can't drift between the two (code-reviewer MINOR
+// Tasks have no `owner_id` of their own — authorization is derived through
+// the parent board's owner_id, PLUS (US13-US17) any board_members row for
+// the parent board and any task_shares row for this exact task, whichever
+// is more permissive (lib/authz.js's getTaskRole/higherRole). Delegates to
+// lib/authz.js's requireTaskRole — shared with boardMembers/taskShares
+// service modules so the effective-role computation can't drift between
+// callers (same extraction rationale as the original getOwnedBoard
+// code-reviewer finding this comment used to describe).
+//
+// `minRole` (default 'viewer'): every read-only call site (attachment/time-
+// entry listing, GET /tasks/:id) accepts any role — US16's "viewer has full
+// access to their OWN time tracking" invariant lives in timeEntries.service
+// scoping every query to `user_id = ownerId`, not here. Callers that mutate
+// shared state (task title/status/position, attachments) pass
+// `{ minRole: 'collaborator' }` — US15/US16.
+//
+// Returns the task row with `myRole` attached (the caller's effective role)
+// so route handlers/toTask can surface it without a second query, plus
+// `hasBoardAccess` (see lib/authz.js's getTaskRole) — updateTask's reorder
+// branch below uses it to block a task-share-only caller from an operation
+// that would touch sibling tasks they can't read (code-reviewer MAJOR
 // finding).
+async function getOwnedTaskWithBoard(taskId, ownerId, { minRole = 'viewer' } = {}) {
+  const { task, role, hasBoardAccess } = await requireTaskRole(taskId, ownerId, minRole);
+  return { ...task, myRole: role, hasBoardAccess };
+}
 
-async function getOwnedTaskWithBoard(taskId, ownerId) {
-  if (!isUuid(taskId)) throw new NotFoundError('errors.task.notFound');
-  const row = await db('tasks')
-    .join('boards', 'boards.id', 'tasks.board_id')
-    .where('tasks.id', taskId)
-    .select('tasks.*', 'boards.owner_id as board_owner_id')
-    .first();
-  if (!row) throw new NotFoundError('errors.task.notFound');
-  if (row.board_owner_id !== ownerId) throw new ForbiddenError('errors.task.forbidden');
-  return row;
+// Single-task detail (new endpoint, GET /tasks/:id) — the read path a
+// task_shares-only recipient actually needs: `listTasksForBoard` below is
+// deliberately board-level-only (US14: a task share must never leak the
+// rest of the board), so a task-share recipient with no board_members row
+// has no other way to fetch the task they were shared. Any role (viewer+)
+// can read.
+async function getTaskForUser(taskId, userId) {
+  const row = await getOwnedTaskWithBoard(taskId, userId);
+  return toTask(row);
 }
 
 // `attachmentCount` (US9): LEFT JOIN + COUNT against `attachments`, grouped
@@ -77,8 +101,20 @@ async function getOwnedTaskWithBoard(taskId, ownerId) {
 // never needs a denormalized counter kept in sync on writes elsewhere
 // (attachments.service.js's create/delete). `tasks.*`/order-by columns are
 // qualified to avoid ambiguity now that a second table is joined in.
+//
+// Board-level access only (owner or a board_members row) — deliberately
+// does NOT also honor a task_shares-only grant (US14: listing every task on
+// the board would leak the rest of the board to someone who was only ever
+// shared one task on it). A task-share recipient reads their task via
+// getTaskForUser (GET /tasks/:id) instead.
+//
+// Each returned task's `myRole` (US17) is the caller's EFFECTIVE role on
+// that specific task — `boardRole`, unless this exact task also has a
+// task_shares row for the caller that's more permissive (higherRole) — so a
+// board-viewer who was additionally task-shared as collaborator on one task
+// sees `collaborator` for that task and `viewer` for every other one.
 async function listTasksForBoard(boardId, ownerId) {
-  await getOwnedBoard(boardId, ownerId);
+  const { role: boardRole } = await requireBoardRole(boardId, ownerId, 'viewer');
   const rows = await db('tasks')
     .leftJoin('attachments', 'attachments.task_id', 'tasks.id')
     .where({ 'tasks.board_id': boardId })
@@ -86,7 +122,17 @@ async function listTasksForBoard(boardId, ownerId) {
     .select('tasks.*')
     .count('attachments.id as attachment_count')
     .orderBy([{ column: 'tasks.status' }, { column: 'tasks.position', order: 'asc' }]);
-  return rows.map(toTask);
+
+  const taskIds = rows.map((row) => row.id);
+  const shareRows = taskIds.length
+    ? await db('task_shares').where({ user_id: ownerId }).whereIn('task_id', taskIds)
+    : [];
+  const shareRoleByTaskId = new Map(shareRows.map((row) => [row.task_id, row.role]));
+
+  const tasks = rows.map((row) =>
+    toTask({ ...row, myRole: higherRole(boardRole, shareRoleByTaskId.get(row.id) || null) }),
+  );
+  return { tasks, boardRole };
 }
 
 async function createTask(boardId, ownerId, { title } = {}) {
@@ -113,7 +159,13 @@ async function createTask(boardId, ownerId, { title } = {}) {
       // pick position = POSITION_GAP). Locking the board row means the
       // second transaction blocks until the first commits, then re-reads
       // the now-current last position instead of a stale one.
-      await getOwnedBoard(boardId, ownerId, { trx, forUpdate: true });
+      //
+      // US15: a board-level collaborator can create tasks, a viewer can't —
+      // `minRole: 'collaborator'` folds that check into the same locked
+      // read. Creating a task always needs board-level access (there's no
+      // task yet for a task_shares row to apply to), so this uses
+      // requireBoardRole, not requireTaskRole.
+      const { role } = await requireBoardRole(boardId, ownerId, 'collaborator', { trx, forUpdate: true });
 
       // Append to the end of Planned (US6: "з'являється в колонці Planned в
       // кінці"). `.forUpdate()` here too, per the code-reviewer's
@@ -136,7 +188,7 @@ async function createTask(boardId, ownerId, { title } = {}) {
           created_by: ownerId,
         })
         .returning('*');
-      return toTask(row);
+      return toTask({ ...row, myRole: role });
     });
   } catch (err) {
     // Backstop: the DEFERRABLE UNIQUE (board_id, status, position)
@@ -178,7 +230,9 @@ async function reindexColumn(trx, orderedIds) {
  *   - same-column reorder: status omitted/unchanged, position = new index.
  */
 async function updateTask(taskId, ownerId, { title, status, position } = {}) {
-  const task = await getOwnedTaskWithBoard(taskId, ownerId);
+  // US15/US16: editing/moving a task needs collaborator+ — a viewer (board-
+  // or task-level) is read-only here.
+  const task = await getOwnedTaskWithBoard(taskId, ownerId, { minRole: 'collaborator' });
 
   const patch = {};
   if (title !== undefined) patch.title = validateTitle(title);
@@ -199,7 +253,30 @@ async function updateTask(taskId, ownerId, { title, status, position } = {}) {
     const row = await db.transaction((trx) =>
       lockedUpdate(trx, 'tasks', taskId, patch, () => new NotFoundError('errors.task.notFound')),
     );
-    return toTask(row);
+    return toTask({ ...row, myRole: task.myRole });
+  }
+
+  // code-reviewer MAJOR finding (US14 leak): reindexColumn below
+  // unconditionally rewrites `position`/`updated_at` on EVERY other task
+  // currently in the destination (board_id, status) column, not just the
+  // one being moved — that's how the gap-based reindex scheme keeps
+  // positions evenly spaced (see reindexColumn's own header comment). A
+  // caller whose ONLY grant on this task is a `task_shares` row (no
+  // `board_members` role on the parent board at all — `hasBoardAccess:
+  // false`, lib/authz.js's getTaskRole) can never read those sibling tasks
+  // through any endpoint (listTasksForBoard/getBoard both require
+  // board-level access, US14), so letting them trigger a write that
+  // touches those siblings' rows is exactly the "task_shares row never
+  // grants access to... any other task" leak the migration's own header
+  // comment (20260824130000_create_task_shares_table.js) declares must not
+  // happen. `role` alone can't catch this — a task-share `collaborator` and
+  // a board-member `collaborator` have the same rank. The title-only branch
+  // above is unaffected (it only ever touches this one row), so a
+  // task-share-only collaborator can still rename their task; only
+  // status/position changes — which always go through this reindex — are
+  // blocked here.
+  if (!task.hasBoardAccess) {
+    throw new ForbiddenError('errors.task.reorderRequiresBoardAccess');
   }
 
   const targetStatus = status !== undefined ? validateStatus(status) : task.status;
@@ -275,7 +352,7 @@ async function updateTask(taskId, ownerId, { title, status, position } = {}) {
       await reindexColumn(trx, orderedIds);
 
       const row = await trx('tasks').where({ id: taskId }).first();
-      return toTask(row);
+      return toTask({ ...row, myRole: task.myRole });
     });
   } catch (err) {
     // Backstop: see createTask's identical catch for why this exists — the
@@ -295,7 +372,11 @@ async function updateTask(taskId, ownerId, { title, status, position } = {}) {
 }
 
 async function deleteTask(taskId, ownerId) {
-  const task = await getOwnedTaskWithBoard(taskId, ownerId);
+  // US15/US16: deleting a task needs collaborator+, same as editing/moving —
+  // "редагувати" is read broadly enough to cover delete, since the only
+  // deletion explicitly withheld from a collaborator by the approved AC is
+  // the board itself.
+  const task = await getOwnedTaskWithBoard(taskId, ownerId, { minRole: 'collaborator' });
 
   // Collected inside the transaction below (storage_path of every file-kind
   // attachment this task owns), then used to clean up the corresponding
@@ -361,6 +442,7 @@ async function deleteTask(taskId, ownerId) {
 module.exports = {
   STATUSES,
   getOwnedTaskWithBoard,
+  getTaskForUser,
   listTasksForBoard,
   createTask,
   updateTask,

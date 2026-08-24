@@ -8,9 +8,21 @@ import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
 import { useHeadMeta } from '../lib/useHeadMeta';
 import { formatDuration } from '../lib/duration';
-import { createTask, deleteTask, getBoard, listTasks, updateTask } from '../api/client';
+import {
+  addBoardMember,
+  createTask,
+  deleteTask,
+  getBoard,
+  listBoardMembers,
+  listTasks,
+  removeBoardMember,
+  updateBoardMemberRole,
+  updateTask,
+} from '../api/client';
+import { canWrite } from '../lib/roles';
 import AppHeader from '../components/AppHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
+import SharePanel from '../components/SharePanel';
 import TaskPanel from '../components/TaskPanel';
 import styles from './BoardViewPage.module.css';
 
@@ -48,8 +60,19 @@ function groupByStatus(tasks) {
 // panel — a dedicated, keyboard-reachable control, deliberately separate
 // from the drag-and-drop surface so opening the panel never races dnd-kit's
 // pointer sensor.
+// US15/US16: a viewer (task.myRole === 'viewer' — board-level viewer, unless
+// elevated by a task-level share, see tasks.service.js's listTasksForBoard)
+// can open/read the task but can't drag it, change its status, or delete it.
+// `disabled` on useSortable turns off both the drag listeners and the
+// pointer/keyboard sensors for this one card, so a viewer's card simply
+// doesn't respond to drag input rather than allowing a drag that would only
+// fail server-side on drop.
 function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+  const editable = canWrite(task.myRole);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+    disabled: !editable,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -59,7 +82,7 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
 
   return (
     <li ref={setNodeRef} style={style} className={styles.card}>
-      <div className={styles.cardHandle} {...attributes} {...listeners}>
+      <div className={styles.cardHandle} {...(editable ? attributes : {})} {...(editable ? listeners : {})}>
         <span className={styles.cardTitle}>{task.title}</span>
         <div className={styles.cardBadges}>
           {task.attachmentCount > 0 && (
@@ -78,6 +101,7 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
           id={`task-status-${task.id}`}
           className={styles.statusSelect}
           value={task.status}
+          disabled={!editable}
           onChange={(event) => onStatusChange(task, event.target.value)}
         >
           {COLUMNS.map((col) => (
@@ -89,9 +113,11 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
         <button type="button" className={styles.openButton} onClick={() => onOpen(task)}>
           {t('task.card.open')}
         </button>
-        <button type="button" className={styles.deleteButton} onClick={() => onDelete(task)}>
-          {t('task.delete.cta')}
-        </button>
+        {editable && (
+          <button type="button" className={styles.deleteButton} onClick={() => onDelete(task)}>
+            {t('task.delete.cta')}
+          </button>
+        )}
       </div>
     </li>
   );
@@ -146,6 +172,7 @@ function BoardViewPage() {
   const [deletingTask, setDeletingTask] = useState(false);
 
   const [panelTask, setPanelTask] = useState(null);
+  const [sharingBoard, setSharingBoard] = useState(false);
 
   const dragSnapshot = useRef(null);
 
@@ -402,9 +429,22 @@ function BoardViewPage() {
             <h1 className={styles.boardTitle}>{pageState === 'loading' ? t('boardView.loading') : board?.title}</h1>
           </div>
           {pageState === 'ready' && (
-            <button type="button" className={styles.createButton} onClick={() => setCreatingTask((v) => !v)}>
-              {t('task.create.cta')}
-            </button>
+            <div className={styles.headerActions}>
+              {/* US13/US15: only the owner manages board_members — a
+                  collaborator can write tasks/attachments but never sees
+                  this control. */}
+              {board?.myRole === 'owner' && (
+                <button type="button" className={styles.shareButton} onClick={() => setSharingBoard(true)}>
+                  {t('share.board.cta')}
+                </button>
+              )}
+              {/* US15/US16: a viewer can't create tasks. */}
+              {canWrite(board?.myRole) && (
+                <button type="button" className={styles.createButton} onClick={() => setCreatingTask((v) => !v)}>
+                  {t('task.create.cta')}
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -507,6 +547,10 @@ function BoardViewPage() {
           onTimeSummaryChange={handleTimeSummaryChange}
         />
       )}
+
+      {sharingBoard && user && (
+        <BoardShareWithToken boardId={boardId} user={user} t={t} onClose={() => setSharingBoard(false)} />
+      )}
     </div>
   );
 }
@@ -543,6 +587,36 @@ function TaskPanelWithToken({ task, user, t, locale, onClose, onAttachmentCountC
       onTimeSummaryChange={onTimeSummaryChange}
     />
   );
+}
+
+// Same token-resolution wrapper shape as TaskPanelWithToken above, for
+// SharePanel (US13). `api` binds SharePanel's generic list/add/updateRole/
+// remove calls to this specific board's board_members endpoints — see
+// SharePanel.jsx's header comment for why the component itself never
+// branches on board-vs-task.
+function BoardShareWithToken({ boardId, user, t, onClose }) {
+  const [idToken, setIdToken] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    user.getIdToken().then((token) => {
+      if (!cancelled) setIdToken(token);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  if (!idToken) return null;
+
+  const api = {
+    list: (token) => listBoardMembers(token, boardId).then((data) => data.members),
+    add: (token, payload) => addBoardMember(token, boardId, payload),
+    updateRole: (token, memberId, payload) => updateBoardMemberRole(token, boardId, memberId, payload),
+    remove: (token, memberId) => removeBoardMember(token, boardId, memberId),
+  };
+
+  return <SharePanel panelTitleKey="share.board.panelTitle" idToken={idToken} api={api} t={t} onClose={onClose} />;
 }
 
 export default BoardViewPage;

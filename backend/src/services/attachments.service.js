@@ -123,10 +123,30 @@ async function toAttachment(row) {
   return base;
 }
 
+// Privacy boundary (CLAUDE.md: "вкладення з visibility private не видно
+// нікому, крім автора"). Before US13-US17 (sharing), a second user could
+// never reach this task at all, so every row here was trivially only ever
+// read by its own author — the filter below did nothing in practice and was
+// never written. Now that a task can have a collaborator/viewer alongside
+// its owner, this must be explicit: a `private` row (still the only
+// visibility any create path ever writes — see insertAttachment below) is
+// filtered out for anyone but its `created_by`. `shared` passes through to
+// every caller who already got past the task-level access check above (that
+// check IS the "has access to this task" gate `shared` is defined against);
+// `selected` has no writer yet (attachment_viewers is schema-only this
+// pass — see its migration) so no row can currently have that visibility to
+// filter here, but the branch is written to hold once one does, not to be
+// revisited when the picker UI ships.
+function isVisibleTo(row, callerId) {
+  if (row.visibility === 'private') return row.created_by === callerId;
+  return true;
+}
+
 async function listAttachmentsForTask(taskId, ownerId) {
   await getOwnedTaskWithBoard(taskId, ownerId);
   const rows = await db('attachments').where({ task_id: taskId }).orderBy('created_at', 'asc');
-  return Promise.all(rows.map(toAttachment));
+  const visible = rows.filter((row) => isVisibleTo(row, ownerId));
+  return Promise.all(visible.map(toAttachment));
 }
 
 // `trx` is required (not defaulted to `db`) so a caller can't accidentally
@@ -193,7 +213,9 @@ async function insertAttachmentLocked(taskId, patch) {
  * trusts the URL alone (CLAUDE.md: BE is the single point of authorization).
  */
 async function createAttachment(taskId, ownerId, { kind, title, url, body, file, fileRejected } = {}) {
-  await getOwnedTaskWithBoard(taskId, ownerId);
+  // US15/US16: adding an attachment needs collaborator+ — a viewer is
+  // read-only here, same as tasks.service.js's updateTask/deleteTask.
+  await getOwnedTaskWithBoard(taskId, ownerId, { minRole: 'collaborator' });
   const validKind = validateKind(kind);
 
   if (validKind === 'link') {
@@ -259,6 +281,18 @@ async function createAttachment(taskId, ownerId, { kind, title, url, body, file,
  * backing MinIO object — never one without the other (no orphaned storage
  * objects, no DB rows pointing at deleted objects).
  *
+ * Privacy boundary (CLAUDE.md: "private (тільки я)"): this applies to
+ * DELETE too, not just the list read `isVisibleTo` gates above — a
+ * `private` attachment belonging to someone else is treated as not existing
+ * for the caller, with NO exception for the board owner. Deliberately 404
+ * (`errors.attachment.notFound`), not 403: a 403 would confirm "an
+ * attachment exists here, you're just not allowed to touch it", which is
+ * exactly the existence-disclosure this app's other anti-enumeration
+ * boundaries avoid (see timeEntries.service.js's updateTimeEntry/
+ * deleteTimeEntry — another user's row 404s the same way a genuinely
+ * missing id would). Same `isVisibleTo` used by listAttachmentsForTask, so
+ * the two can't drift on what "visible to this caller" means.
+ *
  * Two concurrent deletes of the same attachment: both re-derive task
  * ownership first, then race on `lockRow`'s `SELECT ... FOR UPDATE`. The
  * first to acquire the lock deletes the row and commits; the second blocks
@@ -267,13 +301,21 @@ async function createAttachment(taskId, ownerId, { kind, title, url, body, file,
  * test/concurrency/attachments.concurrency.test.js.
  */
 async function deleteAttachment(taskId, attachmentId, ownerId) {
-  await getOwnedTaskWithBoard(taskId, ownerId);
+  // US15/US16: same collaborator+ gate as createAttachment above.
+  await getOwnedTaskWithBoard(taskId, ownerId, { minRole: 'collaborator' });
   if (!isUuid(attachmentId)) throw new NotFoundError('errors.attachment.notFound');
 
   let deletedRow;
   await db.transaction(async (trx) => {
     const row = await lockRow(trx, 'attachments', attachmentId, () => new NotFoundError('errors.attachment.notFound'));
     if (row.task_id !== taskId) throw new NotFoundError('errors.attachment.notFound');
+    // Checked INSIDE the lock, not before it: the lock is what makes this
+    // read-then-decide safe against a concurrent visibility-relevant change
+    // to this exact row (there is none today — visibility is immutable
+    // post-create — but this keeps the check where every other guard in
+    // this transaction already lives rather than splitting it across an
+    // unlocked pre-check and a locked mutation).
+    if (!isVisibleTo(row, ownerId)) throw new NotFoundError('errors.attachment.notFound');
     await trx('attachments').where({ id: attachmentId }).delete();
     deletedRow = row;
   });

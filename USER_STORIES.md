@@ -1,0 +1,568 @@
+# User Stories — Learning Time Tracker
+
+> Бэклог усіх user stories від агента `business-analyst`. Кожна нова фіча одразу з'являється тут — не тільки в чаті.
+
+**Статуси:** 📝 Уточнено (готово до розробки) · 🔧 У розробці · ✅ Готово (пройшло code review)
+
+| ID | Story | Статус | Дата | Карта |
+|----|-------|--------|------|-------|
+| AUTH-001 | Реєстрація через email + пароль | ✅ Готово (пройшло code review) | 2026-08-23 | FE_Auth, BE_AuthMw, BE_UsersMe, DB_Users, Infra_FirebaseAuth |
+| AUTH-002 | Вхід через email + пароль | ✅ Готово (пройшло code review) | 2026-08-23 | FE_Auth, BE_AuthMw, BE_UsersMe, DB_Users, Infra_FirebaseAuth |
+| AUTH-003 | Вхід/реєстрація через Google | ✅ Готово (пройшло code review) | 2026-08-23 | FE_Auth, BE_AuthMw, BE_UsersMe, DB_Users, Infra_FirebaseAuth |
+| US-001 | Перегляд списку тем навчання (Boards overview) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_Boards, BE_Boards, DB_Boards |
+| US-002 | Створення теми навчання (борду) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_Boards, BE_Boards, DB_Boards |
+| US-003 | Перейменування борду | ✅ Готово (пройшло code review) | 2026-08-24 | FE_Boards, BE_Boards, DB_Boards |
+| US-004 | Видалення борду | ✅ Готово (пройшло code review) | 2026-08-24 | FE_Boards, BE_Boards, DB_Boards, Infra_MinIO |
+| US-005 | Перегляд картки навчання на борді (Board view) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_BoardView, BE_Tasks, DB_Tasks |
+| US-006 | Створення картки навчання (таски) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_BoardView, BE_Tasks, DB_Tasks |
+| US-007 | Видалення картки навчання | ✅ Готово (пройшло code review) | 2026-08-24 | FE_BoardView, BE_Tasks, DB_Tasks, Infra_MinIO |
+| US-008 | Зміна статусу drag-and-drop + фолбек-контрол | ✅ Готово (пройшло code review) | 2026-08-24 | FE_BoardView, BE_Tasks, DB_Tasks |
+| US-009 | Додавання вкладення до картки (файл/зображення/посилання/нотатка) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_Attachments, BE_Attachments, DB_Attachments, Infra_MinIO |
+| US-010 | Таймер: старт/стоп з auto-stop-and-switch | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, DB_TimeEntries |
+| US-011 | Ручне додавання та корекція запису часу | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, DB_TimeEntries |
+| US-012 | Список сесій і тотали (таска → колонка → борд → this week) | ✅ Готово (пройшло code review) | 2026-08-24 | FE_TaskPanel, FE_Boards, BE_TimeEntries, BE_Boards, BE_Tasks, DB_TimeEntries |
+| US-013 | Owner ділиться цілим бордом (board_members) | 🔧 У розробці | 2026-08-24 | BE_BoardMembers, DB_BoardMembers |
+| US-014 | Owner ділиться окремою таскою (task_shares) | 🔧 У розробці | 2026-08-24 | BE_TaskShares, DB_TaskShares |
+| US-015 | Collaborator редагує вміст спільного борду | 🔧 У розробці | 2026-08-24 | BE_Tasks, BE_Attachments, BE_BoardMembers |
+| US-016 | Viewer має read-only доступ і приватний трекінг часу | 🔧 У розробці | 2026-08-24 | FE_TaskPanel, BE_TimeEntries, BE_BoardMembers |
+| US-017 | Цілісність даних і edge cases шерингу | 🔧 У розробці | 2026-08-24 | BE_BoardMembers, BE_TaskShares, DB_BoardMembers, DB_TaskShares |
+<!-- business-analyst додає рядки сюди після кожної нової story -->
+
+---
+
+## Деталі (Acceptance Criteria по кожній US)
+
+<!-- business-analyst додає повний блок нижче для кожної US: user story, acceptance criteria, локалізація, відповідність scope -->
+
+**AUTH-001…AUTH-003 — походження.** Ці три stories виникли із запиту користувача побудувати екран `/auth` з підтримкою входу/реєстрації через email+пароль і Google. Перед реалізацією ухвалено два рішення: (1) CLAUDE.md на момент запиту фіксував для `/auth` лише email+пароль — Google-вхід був явним розширенням scope, і CLAUDE.md оновлено, щоб задокументувати Google-провайдер і додати колонку `locale` до таблиці `users`; (2) Google-вхід реалізовано через popup-флоу (`signInWithPopup`), не через redirect, — свідомий технічний вибір. Усі три пройшли повний цикл business-analyst → fullstack-developer → tester → code-reviewer (два раунди фіксів безпеки — enumeration-oracle ендпоінт, race-condition/orphaned-account edge case) → map-keeper і хронологічно передують US-001…US-009.
+
+### AUTH-001 — Реєстрація через email + пароль
+
+```
+## User Story
+Як новий користувач (незалогінений відвідувач), я хочу зареєструватися за допомогою email та пароля, щоб отримати акаунт і почати трекати час навчання.
+
+## Acceptance Criteria
+1. Given валідний email + пароль (мін. 8 символів) + збіжне підтвердження пароля, When "Create account", Then Firebase Auth створює акаунт, FE отримує ID token, BE верифікує й апсертить `users` (display_name = дефолт з email), редірект на `/`.
+2. Given email вже зареєстрований через email+пароль, When повторна реєстрація, Then `auth.error.emailAlreadyInUse`, дубль не створюється.
+3. Given email вже зареєстрований через Google, When спроба email-реєстрації тим самим email, Then локалізована помилка з пропозицією увійти через Google — без автоматичного лінкування акаунтів.
+4. Given email без "@" або порожній, Then інлайн-валідація блокує сабміт, запит на BE не йде.
+5. Given пароль <8 символів, Then `auth.validation.passwordMinLength`.
+6. Given паролі не збігаються, Then `auth.validation.passwordsMustMatch`.
+7. Given мережева помилка, Then `auth.error.networkError`, форма не втрачає введені дані.
+8. Given успішна реєстрація, When повторний виклик з тим самим UID (напр. подвійний сабміт або ретрай після мережевого збою), Then ідемпотентний апсерт `users`, без дублів рядків.
+
+## Локалізація
+- `auth.title` — en: "Sign in — Learning Time Tracker", uk: "Вхід — Learning Time Tracker"
+- `auth.description` — en: "Sign in or create an account to track your learning time.", uk: "Увійдіть або створіть акаунт, щоб відстежувати час навчання."
+- `auth.tabs.signup` — en: "Sign up", uk: "Зареєструватися"
+- `auth.email.label` / `.placeholder` — en: "Email" / "you@example.com", uk: "Емейл" / "you@example.com"
+- `auth.password.label` / `.placeholder` — en: "Password" / "Enter your password", uk: "Пароль" / "Введіть пароль"
+- `auth.confirmPassword.label` — en: "Confirm password", uk: "Підтвердіть пароль"
+- `auth.submit.signup` — en: "Create account", uk: "Створити акаунт"
+- `auth.switchToSignin` — en: "Already have an account? Sign in", uk: "Вже маєте акаунт? Увійти"
+- `auth.validation.emailRequired` — en: "Email is required", uk: "Вкажіть емейл"
+- `auth.validation.emailInvalid` — en: "Enter a valid email address", uk: "Введіть коректний емейл"
+- `auth.validation.passwordRequired` — en: "Password is required", uk: "Вкажіть пароль"
+- `auth.validation.passwordMinLength` — en: "Password must be at least 8 characters", uk: "Пароль має містити щонайменше 8 символів"
+- `auth.validation.passwordsMustMatch` — en: "Passwords do not match", uk: "Паролі не збігаються"
+- `auth.error.emailAlreadyInUse` — en: "This email is already registered. Try signing in instead.", uk: "Цей емейл вже зареєстровано. Спробуйте увійти."
+- `auth.error.useGoogleInstead` — en: "This email is already registered with Google. Continue with Google to sign in.", uk: "Цей емейл вже зареєстровано через Google. Увійдіть через Google."
+- `auth.error.networkError` — en: "Network error. Please check your connection and try again.", uk: "Помилка мережі. Перевірте з'єднання та спробуйте ще раз."
+- `auth.error.generic` — en: "Something went wrong. Please try again.", uk: "Щось пішло не так. Спробуйте ще раз."
+
+## Відповідність scope
+В межах. Email+пароль реєстрація — базовий сценарій екрана `/auth` з розділу "Екрани" CLAUDE.md; апсерт `users` при першому вході відповідає розділу "Дані" ("синхронізується з Firebase Auth при першому вході").
+
+## Примітка (доповнення після code review, поза початковим API-surface AC)
+AC AUTH-001.3 ("email вже зареєстрований через Google") на реальному Firebase-проєкті не можна надійно визначити на клієнті через `fetchSignInMethodsForEmail` — Firebase Email Enumeration Protection блокує цей шлях. Щоб виконати AUTH-001.3 безпечно, за результатами першого раунду code review додано вузький ендпоінт `GET /api/v1/auth/provider-hint?email=...` (10 req/год per IP, 5 req/год per email, timing-safe відповідь), який відповідає на це питання лише в контексті вже відомого конфлікту — тобто лише після того, як Firebase вже розкрив факт існування email через власний код помилки `EMAIL_EXISTS` під час спроби реєстрації. Ендпоінта не було в початковому API-surface AC цієї story; занесено сюди заднім числом як фактично реалізовану частину AUTH-001.3. Локалізація помилки перевищення ліміту — `errors.auth.rateLimited` (en: "Too many requests. Please try again later.", uk: "Забагато запитів. Спробуйте пізніше.") — вже існуючий загальний ключ, повторно використаний, новий ключ під це не заводився.
+```
+
+### AUTH-002 — Вхід через email + пароль
+
+```
+## User Story
+Як зареєстрований користувач, я хочу увійти за допомогою email та пароля, щоб продовжити роботу зі своїми бордами.
+
+## Acceptance Criteria
+1. Given правильні email+пароль, When "Sign in", Then Firebase автентифікує, редірект на `/`.
+2. Given неправильний пароль АБО неіснуючий email, Then однакове повідомлення `auth.error.wrongPassword` для обох випадків (anti-enumeration за задумом — і додатково підтверджено на реальному проєкті: Firebase Email Enumeration Protection сам повертає ідентичний код помилки для обох випадків).
+3. Given акаунт існує лише через Google (без пароля), When спроба email-входу, Then пропозиція увійти через Google (`auth.error.useGoogleInstead`).
+4. Given вже активна сесія, When відкриваю `/auth` напряму, Then редірект на `/` без показу форми.
+5. Given форма в стані завантаження, Then кнопка дизейблена (`auth.submit.loading`), повторний клік ігнорується.
+
+## Локалізація
+- `auth.tabs.signin` — en: "Sign in", uk: "Увійти"
+- `auth.submit.signin` — en: "Sign in", uk: "Увійти"
+- `auth.submit.loading` — en: "Signing in…", uk: "Виконується вхід…"
+- `auth.switchToSignup` — en: "Don't have an account? Sign up", uk: "Немає акаунту? Зареєструватися"
+- `auth.error.wrongPassword` — en: "Incorrect email or password.", uk: "Неправильний емейл або пароль."
+- `auth.error.useGoogleInstead` — en: "This email is already registered with Google. Continue with Google to sign in.", uk: "Цей емейл вже зареєстровано через Google. Увійдіть через Google."
+- `errors.auth.tokenMissing` — en: "You need to sign in to continue.", uk: "Щоб продовжити, увійдіть в акаунт."
+- `errors.auth.tokenInvalid` — en: "Your session has expired. Please sign in again.", uk: "Термін дії сесії закінчився. Увійдіть ще раз."
+
+## Відповідність scope
+В межах. Email+пароль вхід через Firebase client SDK з верифікацією ID token на BE — точно за розділами "Екрани" (`/auth`) і "Архітектура" CLAUDE.md ("BE тільки верифікує токен, не зберігає паролі").
+```
+
+### AUTH-003 — Вхід/реєстрація через Google
+
+```
+## User Story
+Як новий або наявний користувач, я хочу увійти одним кліком через Google, щоб не запам'ятовувати окремий пароль для сервісу.
+
+## Acceptance Criteria
+1. Given клік "Continue with Google", When `signInWithPopup` успішний, Then той самий шлях верифікації токена й апсерту `users`, що й для email — BE не має розгалужень за провайдером.
+2. Given перший вхід через Google, When апсерт, Then `display_name` = `name`-клейм токена, якщо є, інакше дефолт з email.
+3. Given email вже зареєстрований через email+пароль, When спроба Google-входу тим самим email, Then Firebase повертає `auth/account-exists-with-different-credential` → FE показує пропозицію увійти через email+пароль (`auth.error.useEmailInstead`).
+4. Given користувач закриває Google popup, Then `auth.error.popupClosed`, форма повертається в звичайний стан без крашу.
+5. Given повторний вхід через Google (не перший), Then `display_name` НЕ перезаписується значенням з токена при кожному вході — лише при створенні рядка `users`.
+6. Given вже активна сесія, When `/auth` напряму, Then те саме, що AUTH-002 п.4 — редірект на `/` без показу форми.
+
+## Локалізація
+- `auth.google.button` — en: "Continue with Google", uk: "Продовжити з Google"
+- `auth.divider.or` — en: "or", uk: "або"
+- `auth.error.useEmailInstead` — en: "This email is already registered with a password. Sign in with your email and password instead.", uk: "Цей емейл вже зареєстровано з паролем. Увійдіть за допомогою емейлу та пароля."
+- `auth.error.popupClosed` — en: "Google sign-in was cancelled.", uk: "Вхід через Google скасовано."
+
+## Спільна поведінка (обидва провайдери — email+пароль і Google)
+- ID token завжди передається як `Authorization: Bearer`, ідентично для обох провайдерів.
+- BE верифікує токен через Firebase Admin SDK без гілкування за провайдером.
+- Мова визначається з browser locale при першому відвідуванні `/auth` (акаунту ще немає); після логіну — з `users.locale`.
+- Жодна сира помилка Firebase (`error.message`) ніколи не показується користувачу — тільки локалізований ключ, `auth.error.generic` як останній fallback.
+- Route-level head metadata (title/description/og) через `auth.title`/`auth.description`.
+
+## Відповідність scope
+В межах як розширення scope, узгоджене з командою до реалізації: початкова версія CLAUDE.md фіксувала для `/auth` лише email+пароль, Google-вхід був явним доповненням запиту користувача — CLAUDE.md оновлено до реалізації, щоб задокументувати Google-провайдер і додати `locale` до `users`. Popup-флоу (`signInWithPopup`, не redirect) — узгоджений технічний вибір, не порушення архітектури з CLAUDE.md (FE все одно ніколи не звертається до БД напряму, BE верифікує лише ID token).
+```
+
+**US-001…US-009 — походження.** Ці дев'ять stories виникли із запиту користувача: "Тема вивчення (напр. PHP) → Картки вивчення (PHP Syntax), з можливістю прикріпити файли/картинки/текст до кожної картки, drag-n-drop зміна статусу To learn/In progress/Done." Перед реалізацією ухвалено два продуктові рішення: (1) лейбли колонок лишені у формулюванні CLAUDE.md ("Planned"/"In Progress"/"Done — PR merged", не "To learn"), ідентичні в EN і UK — свідоме рішення, не пропуск локалізації; (2) усі три типи вкладень (file/link/note) включені в перший прохід, відповідно до вже зафіксованої в CLAUDE.md схеми `attachments`. Усі дев'ять пройшли повний цикл business-analyst → fullstack-developer → tester → code-reviewer (кілька раундів — concurrency-фікси на US-001…US-008, security-фікси на US-009) → map-keeper, і заапрувлені.
+
+### US-001 — Перегляд списку тем навчання (Boards overview)
+
+```
+## User Story
+Як власник борду, я хочу бачити сітку своїх тем навчання на головному екрані, щоб швидко орієнтуватись, над чим я працюю.
+
+## Acceptance Criteria
+1. Given я авторизований і маю ≥1 борд, When я відкриваю `/`, Then бачу сітку карток бордів з назвою, акцентним кольором, лічильником тасок і сумарним часом.
+2. Given у мене поки немає жодного time_entry, When я бачу картку борду, Then сумарний час відображається як "0"/"—", без помилки.
+3. Given у мене немає жодного борду, When я відкриваю `/`, Then бачу порожній стан із локалізованим закликом створити перший борд.
+4. Given борди, якими зі мною поділились (поза скоупом цього проходу), When я на `/`, Then секція "Shared with me" не показується взагалі (не навіть як заглушка).
+
+## Локалізація
+- `board.overview.heading` — en: "Your boards", uk: "Ваші дошки"
+- `board.overview.loading` — en: "Loading boards…", uk: "Завантаження дошок…"
+- `board.overview.empty` — en: "You don't have any boards yet. Create your first one to start tracking learning time.", uk: "У вас ще немає дошок. Створіть першу, щоб почати відстежувати час навчання."
+- `board.card.totalTime` — en: "Total: {duration}", uk: "Всього: {duration}"
+- `board.card.thisWeek` — en: "This week: {duration}", uk: "За цей тиждень: {duration}"
+- `board.card.noTimeYet` — en: "No time logged yet", uk: "Ще немає записаного часу"
+- `board.card.taskCount` (ICU plural) — en: one "{count} task" / other "{count} tasks"; uk: one "{count} таска" / few "{count} таски" / many "{count} тасок" / other "{count} таски"
+
+## Відповідність scope
+В межах. Секція "Shared with me" явно винесена поза межі цього проходу (реалізується пізніше окремою фічею на базі `board_members`/`task_shares`, вже зафіксованої в CLAUDE.md як цільова схема); порожній стан і нульові тотали відповідають вимогам CLAUDE.md до Boards overview.
+```
+
+### US-002 — Створення теми навчання (борду)
+
+```
+## User Story
+Як власник борду, я хочу створити нову тему навчання (напр. "PHP"), щоб згрупувати картки навчання під нею.
+
+## Acceptance Criteria
+1. Given я на `/`, When я створюю борд з валідною назвою, Then новий борд з'являється у сітці, `owner_id` = мій user id, нульові лічильники.
+2. Given порожня назва, When сабміт, Then локалізована помилка валідації, борд не створюється.
+3. Given борд успішно створений, When відповідь повертається з BE, Then FE одразу оновлює сітку без ручного перезавантаження.
+
+## Локалізація
+- `board.create.cta` — en: "Create board", uk: "Створити дошку"
+- `board.create.titleLabel` — en: "Title", uk: "Назва"
+- `board.create.accentLabel` — en: "Accent color", uk: "Колір акценту"
+- `board.create.saving` — en: "Creating…", uk: "Створення…"
+- `board.create.validation.titleRequired` — en: "Board title is required", uk: "Вкажіть назву дошки"
+- `board.create.validation.titleTooLong` — en: "Board title must be 100 characters or fewer", uk: "Назва дошки має містити не більше 100 символів"
+
+## Відповідність scope
+В межах. Створення борду з назвою й акцентним кольором — базовий CRUD-екран, прямо описаний у CLAUDE.md ("Boards overview... Створення/перейменування/видалення борду").
+```
+
+### US-003 — Перейменування борду
+
+```
+## User Story
+Як власник борду, я хочу перейменувати тему навчання, щоб назва відповідала актуальному змісту.
+
+## Acceptance Criteria
+1. Given я власник борду, When редагую й зберігаю назву, Then назва оновлюється без зміни id/статусів тасок.
+2. Given я не власник борду, When намагаюсь редагувати напряму через API, Then отримую 403 з локалізованим ключем помилки.
+
+## Локалізація
+- `board.card.rename` — en: "Rename", uk: "Перейменувати"
+- `board.rename.validation.titleRequired` — en: "Board title is required", uk: "Вкажіть назву дошки"
+- `board.rename.validation.titleTooLong` — en: "Board title must be 100 characters or fewer", uk: "Назва дошки має містити не більше 100 символів"
+- `errors.board.ownerOnly` — en: "Only the board owner can do this.", uk: "Це може зробити лише власник дошки."
+
+## Відповідність scope
+В межах. Перейменування — частина базового CRUD борду з CLAUDE.md; авторизаційна перевірка (owner-only) відповідає вимозі "перевірка ролі... відбувається в сервісному шарі BE перед кожним запитом до БД".
+```
+
+### US-004 — Видалення борду
+
+```
+## User Story
+Як власник борду, я хочу видалити тему навчання, яка більше не потрібна, щоб прибрати її зі свого списку разом з усім вмістом.
+
+## Acceptance Criteria
+1. Given я власник борду, When підтверджую видалення (незворотна дія), Then борд, усі його таски й вкладення видаляються каскадно.
+2. Given борд містить вкладення, When видалення відбувається, Then файли вкладень також прибираються зі сховища (MinIO) — без осиротілих обʼєктів.
+3. Given я не власник борду, When викликаю delete API напряму, Then отримую 403.
+
+## Локалізація
+- `board.card.delete` — en: "Delete", uk: "Видалити"
+- `board.delete.confirmTitle` — en: "Delete board?", uk: "Видалити дошку?"
+- `board.delete.confirmMessage` — en: "This will permanently delete \"{title}\" and all of its tasks. This cannot be undone.", uk: "Це остаточно видалить «{title}» і всі її таски. Дію не можна скасувати."
+- `board.delete.confirmButton` — en: "Delete board", uk: "Видалити дошку"
+
+## Відповідність scope
+В межах. Каскадне видалення борду/тасок/вкладень і очищення файлів у сховищі — пряма вимога CLAUDE.md до архітектури файлового сховища (MinIO через BE, без осиротілих обʼєктів) та до базового CRUD борду.
+```
+
+### US-005 — Перегляд картки навчання на борді (Board view)
+
+```
+## User Story
+Як власник борду, я хочу бачити три колонки статусу зі своїми картками навчання, щоб розуміти прогрес по темі.
+
+## Acceptance Criteria
+1. Given я відкриваю `/boards/:id` свого борду, Then бачу три колонки з лейблами "Planned"/"In Progress"/"Done — PR merged" (ідентично в EN і UK — продуктове рішення, зафіксоване вище).
+2. Given таска має вкладення, When картка рендериться, Then бейдж кількості вкладень; якщо 0 — бейдж не показується.
+3. Given трекінг часу ще не побудований на момент цієї фічі, When картка рендериться, Then сумарний час на картці не показується взагалі (не "0").
+4. Given `/boards/:id` чужого борду, When перехід за прямим URL, Then локалізована сторінка помилки 403/404.
+
+## Локалізація
+- `boardView.column.planned` — en: "Planned", uk: "Planned"
+- `boardView.column.inProgress` — en: "In Progress", uk: "In Progress"
+- `boardView.column.done` — en: "Done / PR merged", uk: "Done / PR merged"
+- `boardView.column.empty` — en: "No tasks yet", uk: "Ще немає тасок"
+- `task.card.attachmentCount` (ICU plural) — en: one "{count} attachment" / other "{count} attachments"; uk: one "{count} вкладення" / few "{count} вкладення" / many "{count} вкладень" / other "{count} вкладення"
+- `boardView.error.forbiddenTitle` — en: "You don't have access to this board", uk: "У вас немає доступу до цієї дошки"
+- `boardView.error.notFoundTitle` — en: "Board not found", uk: "Дошку не знайдено"
+
+## Відповідність scope
+В межах. Три колонки й картки тасок з бейджами вкладень — точно за розділом "Екрани" CLAUDE.md (Board view). Однакові лейбли колонок EN/UK — свідоме продуктове рішення, а не порушення вимоги локалізації: рядок перекладається (ключ існує в обох словниках), просто обидва значення збігаються за змістом.
+```
+
+### US-006 — Створення картки навчання (таски)
+
+```
+## User Story
+Як власник борду, я хочу додати нову картку навчання в колонку "Planned", щоб зафіксувати наступний крок вивчення теми.
+
+## Acceptance Criteria
+1. Given валідна назва, When створюю таску, Then вона з'являється в колонці "Planned" (`status=planned`), `position` — в кінці колонки, `created_by` = я.
+2. Given порожня назва, When сабміт, Then локалізована помилка, таска не створюється.
+
+## Локалізація
+- `task.create.cta` — en: "Add task", uk: "Додати таску"
+- `task.create.titlePlaceholder` — en: "Task title", uk: "Назва таски"
+- `task.create.saving` — en: "Adding…", uk: "Додавання…"
+- `task.create.validation.titleRequired` — en: "Task title is required", uk: "Вкажіть назву таски"
+- `task.create.validation.titleTooLong` — en: "Task title must be 200 characters or fewer", uk: "Назва таски має містити не більше 200 символів"
+
+## Відповідність scope
+В межах. Створення таски в колонці Planned — базовий CRUD, прямо описаний у розділі "Екрани" CLAUDE.md ("додавання/видалення тасок").
+```
+
+### US-007 — Видалення картки навчання
+
+```
+## User Story
+Як власник борду, я хочу видалити картку навчання, яка більше не актуальна, щоб прибрати її з борду разом з усіма вкладеннями.
+
+## Acceptance Criteria
+1. Given підтвердження видалення, Then таска й усі її вкладення видаляються каскадно, файли прибираються зі сховища.
+2. Given таска не моя, When delete API напряму, Then отримую 403.
+
+## Локалізація
+- `task.delete.cta` — en: "Delete", uk: "Видалити"
+- `task.delete.confirmTitle` — en: "Delete task?", uk: "Видалити таску?"
+- `task.delete.confirmMessage` — en: "This will permanently delete \"{title}\". This cannot be undone.", uk: "Це остаточно видалить «{title}». Дію не можна скасувати."
+- `task.delete.confirmButton` — en: "Delete task", uk: "Видалити таску"
+
+## Відповідність scope
+В межах. Каскадне видалення таски й очищення файлів вкладень зі сховища — той самий принцип, що й US-004, вимога CLAUDE.md до архітектури файлового сховища.
+```
+
+### US-008 — Зміна статусу drag-and-drop + фолбек-контрол
+
+```
+## User Story
+Як власник борду, я хочу перетягнути картку навчання між колонками статусу або скористатись контролом статусу без drag, щоб оновити прогрес будь-яким зручним способом.
+
+## Acceptance Criteria
+1. Given перетягування картки між колонками, When drop завершується, Then `status` і `position` оновлюються на BE, картка рендериться миттєво (optimistic UI).
+2. Given користування клавіатурою/screen reader, When відкриваю картку, Then доступний явний не-drag контрол (dropdown/кнопки) з тим самим ефектом, керований Tab+Enter.
+3. Given drag у межах тієї ж колонки (реордер), Then оновлюється лише `position`, без зміни `status`.
+4. Given мережевий запит провалюється, When drop/клік невдалий, Then картка візуально повертається в попередній стан, і показується локалізована помилка — UI ніколи не розходиться з BE мовчки.
+5. Given таска чужого борду, When PATCH статусу напряму через API, Then отримую 403.
+
+## Локалізація
+- `boardView.card.statusLabel` — en: "Status", uk: "Статус"
+- `errors.task.invalidStatus` — en: "Invalid task status.", uk: "Некоректний статус таски."
+- `errors.task.positionConflict` — en: "This board changed while you were working. Please try again.", uk: "Дошка змінилася, поки ви працювали. Спробуйте ще раз."
+- `errors.task.forbidden` — en: "You don't have access to this task.", uk: "У вас немає доступу до цієї таски."
+
+## Відповідність scope
+В межах. Drag-and-drop зміна статусу — пряма вимога і з початкового запиту користувача, і з розділу "Board view" CLAUDE.md ("переміщення таски між колонками (drag або контрол статусу)"); a11y-фолбек і optimistic-UI з відкатом — необхідна умова коректної, доступної реалізації цієї ж вимоги, не розширення scope.
+```
+
+### US-009 — Додавання вкладення до картки (файл/зображення/посилання/нотатка)
+
+```
+## User Story
+Як власник борду, я хочу додати файл, зображення, посилання або нотатку до картки навчання, щоб зберегти при собі навчальні матеріали.
+
+## Acceptance Criteria
+1. Given файл або зображення обрано, When я завантажую вкладення, Then файл іде через BE в MinIO (FE не звертається до сховища напряму), у панелі з'являється чіп з назвою, для зображень — превʼю.
+2. Given непідтримуваний тип файлу або файл завеликий, When я намагаюсь завантажити, Then локалізована помилка, вкладення не створюється.
+3. Given нове вкладення будь-якого типу успішно створене, Then `visibility='private'` за замовчуванням (picker видимості — поза межами цього проходу), `created_by` = я.
+4. Given заголовок і URL заповнені, When я додаю посилання, Then обидва поля обов'язкові, URL валідується, чіп зʼявляється в групі "Links", відкривається в новій вкладці.
+5. Given короткий текст введено, When я додаю нотатку, Then чіп зʼявляється в групі "Notes" з обрізаним превʼю тексту.
+6. Given вкладення різних типів на тасці, When панель вкладень рендериться, Then чіпи згруповані по типу (Files/Links/Notes) з лічильником у кожній групі.
+7. Given я власник таски, When видаляю вкладення (з підтвердженням), Then рядок і файл (якщо є) прибираються зі сховища.
+8. Given я не власник таски, When викликаю будь-яку дію над вкладенням напряму через API, Then отримую 403.
+
+## Локалізація
+- `attachment.panel.title` — en: "Attachments", uk: "Вкладення"
+- `attachment.group.files` / `.links` / `.notes` — en: "Files"/"Links"/"Notes", uk: "Файли"/"Посилання"/"Нотатки"
+- `attachment.add.file` / `.link` / `.note` — en: "Add file"/"Add link"/"Add note", uk: "Додати файл"/"Додати посилання"/"Додати нотатку"
+- `attachment.file.hint` — en: "Images, PDF, Word documents, or plain text — up to 25MB.", uk: "Зображення, PDF, документи Word або звичайний текст — до 25МБ."
+- `attachment.link.titleLabel` / `.urlLabel` — en: "Title"/"URL", uk: "Заголовок"/"URL"
+- `attachment.note.bodyLabel` — en: "Note", uk: "Нотатка"
+- `attachment.delete.confirmTitle` — en: "Delete attachment?", uk: "Видалити вкладення?"
+- `errors.attachment.invalidFileType` — en: "This file type isn't supported.", uk: "Цей тип файлу не підтримується."
+- `errors.attachment.fileTooLarge` — en: "File is too large. Maximum size is 25MB.", uk: "Файл завеликий. Максимальний розмір — 25МБ."
+- `errors.attachment.urlInvalid` — en: "Enter a valid URL starting with http:// or https://.", uk: "Введіть коректний URL, що починається з http:// або https://."
+
+## Відповідність scope
+В межах — усі три типи вкладень (file/link/note) прямо описані в розділі "Task panel" CLAUDE.md і збігаються зі схемою `attachments` (`kind enum file | link | note`). Picker видимості (`shared`/`selected`, `attachment_viewers`) свідомо не входить у цей прохід — усі вкладення `private` за замовчуванням без UI вибору; це не суперечить scope, а відкладена частина тієї ж фічі (`DB_AttachmentViewers` лишається запланованою на карті проєкту).
+```
+
+**US-010…US-012 — походження.** Наступний крок після завершення Boards/Tasks/Attachments — секція "Час" у Task Panel, яку CLAUDE.md описує в розділі "Екрани" п.4 ("Час: таймер старт/стоп + список сесій, форма ручного додавання/корекції запису") і в розділі "Поведінка" ("Таймер — на рівні таски, лише один активний на користувача. Час рахується від збереженого `started_at`... Зупинка — запит до BE, який пише рядок сесії"). Продуктове рішення **auto-stop-and-switch** (старт таймера на іншій тасці автоматично зупиняє попередній активний, а не блокує дію) ухвалено самостійно business-analyst-ом, оскільки CLAUDE.md фіксує лише інваріант "один активний", не поведінку при конфлікті — обрано автоматичну дію замість блокуючої відмови, щоб прогрес ніколи не губився мовчки. Усі три пройшли повний цикл business-analyst → fullstack-developer → tester → code-reviewer (один раунд Request changes → фікс retry-логіки в race-сценарії з 3+ одночасними стартами → Approve) → map-keeper, заапрувлені, `PROJECT_MAP.md` оновлено.
+
+### US-010 — Таймер: старт/стоп з auto-stop-and-switch
+
+```
+## User Story
+Як власник борду, я хочу запускати й зупиняти таймер на конкретній тасці з Task Panel, щоб час навчання рахувався від збереженого на сервері моменту старту, а не губився при закритті вкладки.
+
+## Acceptance Criteria
+1. Given таска без активного таймера користувача, When "Почати таймер", Then BE створює `time_entries` (task_id, user_id, started_at=now(), ended_at=null), FE рахує від started_at, не від локального нуля.
+2. Given таймер іде на тасці A, When "Почати таймер" на тасці B (той самий юзер), Then BE в одній транзакції закриває запис A (ended_at=now(), duration_seconds рахується) і створює новий активний запис B; відповідь містить `{startedEntry, autoStoppedEntry}`, FE показує нотифікацію "Таймер на іншій тасці зупинено".
+3. Given таймер іде на тасці A, When відкриваю Task Panel цієї таски, Then `GET /tasks/:id/time-entries` повертає `activeEntry`, лічильник рахує від збереженого started_at.
+4. Given активний таймер, When "Зупинити таймер" (опційна нотатка), Then ended_at=now(), duration_seconds рахується, сесія одразу в списку.
+5. Given немає активного таймера на цій тасці, When запит на зупинку, Then 409 `errors.timeEntry.noActiveTimer`.
+6. Given дві (і більше) одночасні спроби старту з різних вкладок того самого юзера, When запити летять паралельно, Then гарантовано не лишається двох активних записів одночасно, без 500 — покрито concurrency-тестом (`timeEntries.concurrency.test.js`).
+7. Given не власник борду цієї таски, When старт/стоп, Then 403 `errors.task.forbidden`.
+8. Given невалідний/неіснуючий taskId, When старт/стоп, Then 404 `errors.task.notFound`.
+
+## Локалізація
+- `timeEntry.section.title` — en: "Time", uk: "Час"
+- `timeEntry.timer.start` — en: "Start timer", uk: "Почати таймер"
+- `timeEntry.timer.stop` — en: "Stop timer", uk: "Зупинити таймер"
+- `timeEntry.timer.running` — en: "Running — {duration}", uk: "Триває — {duration}"
+- `timeEntry.timer.switchedNotice` — en: "Started this timer — stopped the one running on another task.", uk: "Запущено цей таймер — зупинено той, що йшов на іншій тасці."
+- `timeEntry.timer.stopNoteLabel` — en: "Note (optional)", uk: "Нотатка (необовʼязково)"
+- `errors.timeEntry.noActiveTimer` — en: "No timer is running on this task.", uk: "На цій тасці не запущено таймер."
+- `errors.timeEntry.startConflict` — en: "Couldn't start the timer due to a conflicting request. Please try again.", uk: "Не вдалося запустити таймер через конфліктний запит. Спробуйте ще раз." (доданий під час code review — див. примітку нижче)
+
+## Відповідність scope
+В межах. Таймер один-на-застосунок, рахується від served `started_at` — пряма вимога CLAUDE.md ("Поведінка"). Owner-only авторизація — той самий гейт, що вже діє для tasks/attachments, розширення до ролей collaborator/viewer винесено окремо в US-016.
+
+## Примітка (доповнення після code review, поза початковим API-surface AC)
+Реалізація retry-логіки старту таймера спершу витримувала лише рівно 2 одночасних гонщики (AC6 сформульовано як "з двох вкладок"); code-reviewer виявив, що 3+ одночасні перші-старти від того самого юзера могли впасти в сирий 500 замість чистого auto-stop-and-switch. Виправлено збільшенням ліміту спроб до 8 і заміною мертвого fallback-коду помилки на новий, чесно названий `errors.timeEntry.startConflict` (замість оманливого `noActiveTimer`) — задокументовано як `409` у `openapi.yaml`. Побічно виявлено й виправлено баг у `scripts/i18n-check.js` (невірний шлях до словників мовчки вимикав перевірку локалізації) — не частина AC цієї US, зафіксовано тут як технічний борг, закритий у процесі.
+```
+
+### US-011 — Ручне додавання та корекція запису часу
+
+```
+## User Story
+Як власник борду, я хочу додати або відкоригувати запис часу вручну (хвилини + опційна нотатка), щоб врахувати навчання, яке я забув затаймити, або виправити помилковий запис.
+
+## Acceptance Criteria
+1. Given хвилини (ціле, 1–1440) + опційна нотатка (trim, ≤500 символів), When сабміт, Then BE створює завершений запис: duration_seconds=minutes*60, ended_at=now(), started_at=ended_at-duration_seconds.
+2. Given хвилини не вказано/0/від'ємне/не ціле, When сабміт, Then 400 `errors.timeEntry.minutesInvalid`.
+3. Given хвилини > 1440, When сабміт, Then 400 `errors.timeEntry.minutesTooLarge`.
+4. Given нотатка > 500 символів, When сабміт, Then 400 `errors.timeEntry.noteTooLong`.
+5. Given завершений (не активний) власний запис, When редагування хвилин/нотатки, Then BE оновлює duration_seconds/note, перераховує ended_at, started_at лишається незмінним.
+6. Given запис активний (ended_at IS NULL), When PATCH через форму корекції, Then 404 `errors.timeEntry.notFound` — активний редагується лише через stop-флоу.
+7. Given запис належить іншому користувачу, When PATCH/DELETE, Then 404 `errors.timeEntry.notFound`, НІКОЛИ 403 (anti-enumeration для приватності прогресу — той самий підхід, що вже застосований для sign-in AUTH-002).
+8. Given будь-який власний запис, When "Видалити" й підтвердження в ConfirmDialog, Then запис видаляється; якщо був активним — таймер скасовується без збереження часу.
+9. Given дві одночасні PATCH/DELETE на той самий запис, When паралельні запити, Then один успіх, другий чистий 404, без 500.
+
+## Локалізація
+- `timeEntry.manual.cta` — en: "Add manual entry", uk: "Додати запис вручну"
+- `timeEntry.manual.minutesLabel` — en: "Minutes", uk: "Хвилини"
+- `timeEntry.manual.notePlaceholder` — en: "What did you work on? (optional)", uk: "Над чим працювали? (необовʼязково)"
+- `timeEntry.manual.submit` / `.saving` — en: "Add entry" / "Adding…", uk: "Додати запис" / "Додавання…"
+- `timeEntry.edit.cta` / `.submit` — en: "Edit" / "Save changes", uk: "Редагувати" / "Зберегти зміни"
+- `timeEntry.delete.cta` / `.confirmTitle` / `.confirmMessage` / `.confirmButton` — en: "Delete" / "Delete this entry?" / "This will permanently delete this time entry. This cannot be undone." / "Delete entry", uk: "Видалити" / "Видалити цей запис?" / "Це остаточно видалить цей запис часу. Дію не можна скасувати." / "Видалити запис"
+- `errors.timeEntry.minutesInvalid` — en: "Enter a whole number of minutes greater than 0.", uk: "Введіть ціле число хвилин, більше за 0."
+- `errors.timeEntry.minutesTooLarge` — en: "A single entry can't exceed 24 hours (1440 minutes).", uk: "Один запис не може перевищувати 24 години (1440 хвилин)."
+- `errors.timeEntry.noteTooLong` — en: "Note must be 500 characters or fewer.", uk: "Нотатка має містити не більше 500 символів."
+- `errors.timeEntry.notFound` — en: "Time entry not found.", uk: "Запис часу не знайдено."
+
+## Відповідність scope
+В межах. Ручне додавання/корекція (хвилини + опційна нотатка) — пряма вимога CLAUDE.md ("форма ручного додавання/корекції запису"). Anti-enumeration (404, не 403, для чужих записів) — застосування вимоги "Прогрес завжди приватний" на найгранулярнішому рівні.
+```
+
+### US-012 — Список сесій і тотали (таска → колонка → борд → this week)
+
+```
+## User Story
+Як власник борду, я хочу бачити список своїх сесій по тасці та сумарний час на рівні таски/колонки/борду і за цей тиждень на Boards overview, щоб розуміти, скільки часу я вже інвестував.
+
+## Acceptance Criteria
+1. Given відкрита Task Panel, When секція "Час" завантажується, Then `GET /tasks/:id/time-entries` повертає лише сесії ЦЬОГО користувача (найновіші зверху), тривалість — locale-aware формат.
+2. Given та сама відповідь, Then `totalSeconds` = сума завершених записів + живий `now()-started_at` активного, якщо є.
+3. Given будь-який запит до цього ендпоінту, Then BE ніколи не повертає рядки `time_entries` інших користувачів — `WHERE user_id=requester` завжди, без винятків (закріплено як контракт-інваріант в `openapi.yaml`).
+4. Given картка таски на Board view, When список тасок завантажується, Then `GET /boards/:id/tasks` повертає `totalSeconds` на кожній тасці, бейдж часу на картці (не показується при 0).
+5. Given та сама відповідь, Then BE додатково повертає `columnTotals: {planned, in_progress, done}` і `boardTotalSeconds`.
+6. Given Boards overview, When список бордів завантажується, Then `GET /boards` повертає `totalSeconds` (all-time) і `thisWeekSeconds` (з понеділка 00:00 UTC) на кожному борді — замінює заглушку `board.card.totalTimePlaceholder`.
+7. Given борд без жодного запису часу, When рендериться картка, Then `board.card.noTimeYet` замість "0г 0хв".
+8. Given переміщення таски між колонками, Then `time_entries` не видаляються і не обнуляються.
+
+## Локалізація
+- `timeEntry.sessions.title` / `.empty` / `.total` — en: "Sessions" / "No sessions logged yet" / "Total: {duration}", uk: "Сесії" / "Ще немає записаних сесій" / "Разом: {duration}"
+- `task.card.timeBadge` — en/uk: "{duration}"
+- `board.card.totalTime` — en: "{duration} total", uk: "{duration} загалом"
+- `board.card.thisWeek` — en: "{duration} this week", uk: "{duration} цього тижня"
+- `board.card.noTimeYet` — en: "No time logged yet", uk: "Ще немає записаного часу"
+- `time.unit.hoursMinutes` / `.minutes` / `.hours` — en: "{hours}h {minutes}m" / "{minutes}m" / "{hours}h", uk: "{hours}год {minutes}хв" / "{minutes}хв" / "{hours}год" (одиниці свідомо не відмінюються за числом, як "5 кг" — ICU-плюралізація тут не застосовна, продуктове рішення, не пропуск)
+
+## Відповідність scope
+В межах. Тотали таска → колонка → борд → "this week" — пряма вимога CLAUDE.md ("Поведінка": "Тотали: таска → колонка → борд, плюс this week на boards overview — рахує BE"). Межа тижня зафіксована як понеділок 00:00 UTC (не локальний час користувача — per-user timezone не існує на `users`). Явно поза межами: team view тотали по учасниках (`FE_TeamView`/`BE_TeamView`) — залежить від `board_members`/`task_shares`, яких на момент цієї US ще не було; рольова диференціація доступу — авторизація лишається owner-only.
+```
+
+**US-013…US-017 — походження.** Наступний крок після "Часу" — шеринг борду й окремої таски (`board_members`, `task_shares`), фундамент, від якого залежать "Shared with me" (`FE_Shared`) і team view (`FE_TeamView`/`BE_TeamView`), обидва свідомо поза цим проходом. CLAUDE.md дає лише часткову матрицю прав ("collaborator може додавати таски/вкладення", "viewer тільки читання") — business-analyst ухвалив і зафіксував явно кілька рішень, яких бракувало: повний перелік дозволів collaborator (edit/delete таски й вкладень дозволено, керування доступом і видалення борду — ні, за контрастною побудовою фрази CLAUDE.md), keeping час-трекінг доступним навіть viewer'у (приватність прогресу — per-user гарантія, не привілей ролі), 404 (не 403) при спробі поділитись з незареєстрованим email (узгоджено з "Поза межами цього етапу": без auto-invite), і правило "вища роль перемагає" при співіснуванні board-level і task-level доступу. **Станом на момент внесення цього запису до `USER_STORIES.md`** у робочій директорії вже присутні незакомічені файли реалізації (нові міграції `board_members`/`task_shares`/`attachment_viewers`, сервіси `boardMembers.service.js`/`taskShares.service.js`, тест `sharing.test.js`, розширення `authz.js`/`boards.route.js`/`tasks.route.js`) — судячи з обсягу змін, це не порожні заглушки, тому статус нижче виставлено 🔧 У розробці, а не 📝 Уточнено. Ця реалізація ще не проходила tester/code-reviewer у межах цієї розмови.
+
+### US-013 — Owner ділиться цілим бордом
+
+```
+## User Story
+Як власник борду, я хочу надати іншому зареєстрованому користувачу роль viewer або collaborator на весь борд за його email, щоб він міг переглядати (і опційно редагувати) мої таски без передачі права власності.
+
+## Acceptance Criteria
+1. Given я власник борду B і email вже зареєстрований, When `POST /api/v1/boards/:id/members` `{email, role:"viewer"}`, Then створюється `board_members(board_id=B, user_id, role=viewer)`, 201.
+2. Given те саме з `role:"collaborator"`, Then 201, роль collaborator.
+3. Given я маю будь-яку роль на борді, When `GET /api/v1/boards/:id/members`, Then 200 зі списком учасників (owner не фігурує як окремий рядок — власність окреме поле `ownerId`).
+4. Given учасник вже є на борді, When `PATCH /api/v1/boards/:id/members/:userId` `{role}`, Then роль оновлюється, 200.
+5. Given учасник є на борді, When `DELETE /api/v1/boards/:id/members/:userId`, Then 204; наступний запит видаленого користувача → 403 `errors.board.forbidden`.
+6. Given email не зареєстрований, When POST з цим email, Then 404 `errors.sharing.emailNotFound` (навмисно — без auto-invite, узгоджено з "Поза межами цього етапу").
+7. Given я collaborator/viewer (не owner), When будь-яка мутація членства, Then 403 `errors.board.ownerOnly`.
+8. Given я не маю доступу до борду взагалі, When GET/мутація членства, Then 404 `errors.board.notFound`.
+9. Given роль відмінна від viewer/collaborator, When POST/PATCH, Then 400 `errors.sharing.invalidRole`.
+10. Given відсутній email або role в тілі, Then 400 `errors.sharing.emailRequired`/`errors.sharing.roleRequired`.
+
+## Локалізація
+- `sharing.board.manageAccess` — en: "Manage access", uk: "Керування доступом"
+- `sharing.board.membersEmpty` — en: "No one has access to this board yet.", uk: "Поки що ніхто не має доступу до цього борду."
+- `sharing.emailLabel` / `.roleLabel` — en: "Email" / "Role", uk: "Email" / "Роль"
+- `sharing.role.viewer` / `.collaborator` / `.owner` — en: "Viewer" / "Collaborator" / "Owner", uk: "Переглядач" / "Співавтор" / "Власник"
+- `sharing.addCta` / `.removeCta` / `.removeConfirm` — en: "Add" / "Remove" / "Remove {email} from this board?", uk: "Додати" / "Прибрати" / "Прибрати {email} з цього борду?"
+- `errors.sharing.emailRequired` / `.roleRequired` / `.invalidRole` / `.emailNotFound` — en: "Enter an email address." / "Choose a role." / "Role must be viewer or collaborator." / "No account found for this email.", uk: "Введіть email." / "Оберіть роль." / "Роль має бути viewer або collaborator." / "Акаунт з таким email не знайдено."
+- `errors.boardMembers.alreadyShared` / `.notFound` — en: "This person already has access to the board." / "This person no longer has access.", uk: "Ця людина вже має доступ до борду." / "Ця людина вже не має доступу."
+- `errors.board.ownerOnly` — en: "Only the board owner can do this.", uk: "Це може зробити лише власник борду."
+
+## Відповідність scope
+В межах. Роль viewer/collaborator, email-based шеринг — пряма вимога CLAUDE.md ("Шеринг": "Можна поділитись цілим бордом... Роль: viewer... collaborator"). Auto-invite незареєстрованих email навмисно виключено ("Поза межами цього етапу").
+```
+
+### US-014 — Owner ділиться окремою таскою
+
+```
+## User Story
+Як власник борду, я хочу дати доступ до однієї конкретної таски (viewer або collaborator), не відкриваючи решту борду, щоб контролювати гранулярність доступу.
+
+## Acceptance Criteria
+1. Given я власник борду, якому належить таска T, When `POST /api/v1/tasks/:id/shares` `{email, role}`, Then створюється `task_shares(task_id=T, user_id, role)`, 201.
+2. Given у мене є доступ до T (board- або task-level), When `GET /api/v1/tasks/:id/shares`, Then 200 зі списком.
+3. Given власник борду, When `PATCH`/`DELETE /api/v1/tasks/:id/shares/:userId`, Then дзеркалить US-013.4-5.
+4. **Критичний AC — межа доступу.** Given користувач має ЛИШЕ `task_shares` на T (без `board_members` на батьківський борд), When `GET /api/v1/boards/:boardId/tasks` (повний список тасок борду), Then 403 `errors.board.forbidden` — доступ до однієї таски не розкриває решту борду; при цьому доступ до самої T (time-entries, attachments) дозволений за роллю з US-015/US-016.
+5. Given email не зареєстрований / не-owner борду керує / невалідна роль / порожні поля, Then ті самі коди помилок, що US-013.6-7,9-10, з ключами `errors.taskShares.*`.
+
+## Локалізація
+- `sharing.task.manageAccess` — en: "Share this task", uk: "Поділитись цією таскою"
+- `sharing.task.sharesEmpty` — en: "This task hasn't been shared individually.", uk: "Цю таску окремо ще ні з ким не поділено."
+- `errors.taskShares.alreadyShared` / `.notFound` — en: "This person already has access to the task." / "This access no longer exists.", uk: "Ця людина вже має доступ до таски." / "Цього доступу вже немає."
+
+## Відповідність scope
+В межах. "Можна поділитись... окремою таскою" — пряма вимога CLAUDE.md ("Шеринг"), схема `task_shares` вже зафіксована в розділі "Дані". Межа доступу (не розкриває решту борду) — застосування принципу найменших привілеїв, узгоджено з описом "шеринг окремої таски без усього борду".
+```
+
+### US-015 — Collaborator редагує вміст спільного борду
+
+```
+## User Story
+Як collaborator спільного борду, я хочу створювати/редагувати/переміщати таски та додавати/видаляти вкладення, щоб реально співпрацювати над навчальним матеріалом.
+
+## Acceptance Criteria
+1. Given я collaborator борду B (через board_members або task_shares), When `POST /boards/:id/tasks`, `PATCH /tasks/:id`, `DELETE /tasks/:id`, `POST/DELETE /tasks/:id/attachments`, Then усі проходять як для власника.
+2. Given я collaborator, When `PATCH/DELETE /boards/:id` або будь-яка мутація `board_members`/`task_shares`, Then 403 `errors.board.ownerOnly`.
+3. Given collaborator змінює статус таски, When власник/інший collaborator читає `GET /boards/:id/tasks`, Then бачить оновлений статус — один спільний стан на всіх.
+4. Given я collaborator лише через `task_shares` на T (без board-level доступу), When `POST /boards/:boardId/tasks` (нова таска на весь борд), Then 403 `errors.board.forbidden`.
+
+## Локалізація
+Без нових ключів — використовує вже наявні `errors.board.ownerOnly`, `errors.board.forbidden` з US-013/US-003/US-008.
+
+## Відповідність scope
+В межах. "Роль... collaborator (може додавати таски/вкладення)" — пряма вимога CLAUDE.md. Межі заборон (delete борду, керування доступом) виведені явним рішенням business-analyst-а через контрастну побудову фрази CLAUDE.md.
+```
+
+### US-016 — Viewer має read-only доступ і приватний трекінг часу
+
+```
+## User Story
+Як viewer спільного борду/таски, я хочу бачити таски, статуси й вкладення, і при цьому вести власний облік часу, не маючи можливості змінювати чужий контент.
+
+## Acceptance Criteria
+1. Given я viewer борду B, When `GET /boards/:id`, `GET /boards/:id/tasks`, `GET /tasks/:id/attachments`, Then 200 з повними даними для читання.
+2. Given я viewer, When `POST/PATCH/DELETE` тасок або вкладень, Then 403 `errors.board.readOnlyAccess` (відрізняється від `forbidden`, щоб FE показав правильне повідомлення "маєте доступ лише для перегляду" замість "немає доступу взагалі").
+3. Given я viewer на таску T, When start/stop таймера, ручний запис, edit/delete власного запису, Then усі проходять 200/201/204 — рівно як для owner/collaborator.
+4. Given viewer і owner обидва мають time-entries на T, When viewer викликає `GET /tasks/:id/time-entries`, Then відповідь містить лише рядки viewer-а плюс агреговані тотали — жодного чужого рядка (регресійна перевірка, що розширення ролей не відкрило обхідний шлях).
+5. Given я viewer, When відкриваю Board view, Then кнопки "Add task"/"Delete board"/"Manage access"/edit-delete тасок і вкладень приховані/задизейблені за полем `myRole` з BE; таймер і форма ручного запису лишаються активними.
+
+## Локалізація
+- `sharing.viewerBanner` — en: "You have view-only access to this board.", uk: "Ви маєте доступ лише для перегляду цього борду."
+- `errors.board.readOnlyAccess` — en: "You have view-only access — this action isn't available.", uk: "У вас доступ лише для перегляду — ця дія недоступна."
+- `errors.task.readOnlyAccess` — en: "You have view-only access to this task.", uk: "У вас доступ лише для перегляду цієї таски."
+
+## Відповідність scope
+В межах. "Роль: viewer (тільки читання)" + "Прогрес завжди приватний. Записи часу... видно лише тому, хто їх залогував" — обидві вимоги з розділу "Шеринг" CLAUDE.md, продуктове рішення business-analyst-а — дозволити viewer власний трекінг часу, бо приватність прогресу сформульована як per-user гарантія, не привілей ролі.
+```
+
+### US-017 — Цілісність даних і edge cases шерингу
+
+```
+## User Story
+Як система, я гарантую, що шеринг не створює суперечливих або небезпечних станів доступу.
+
+## Acceptance Criteria
+1. Given власник намагається поділитись бордом/таскою з власним email, When POST, Then 422 `errors.sharing.cannotShareWithSelf`; симетрично `errors.sharing.cannotIncludeOwner`, якщо email резолвиться в `boards.owner_id`.
+2. Given email вже є в `board_members`/`task_shares`, When POST з тим самим email повторно, Then 409 `errors.boardMembers.alreadyShared`/`errors.taskShares.alreadyShared` — POST не апсертить роль мовчки, зміна лише через PATCH; гонка двох одночасних POST мапиться в той самий 409 через DB unique-constraint `(board_id, user_id)`/`(task_id, user_id)`, не 500.
+3. Given DELETE і POST того самого email одночасно, When паралельні запити, Then детермінований фінальний стан (видалено АБО присутній з нововказаною роллю), без порушення unique-constraint, без 500.
+4. Given борд видаляється, When транзакція комітиться, Then усі `board_members` борду і всі `task_shares` його тасок видаляються каскадно (FK ON DELETE CASCADE) — жодного осиротілого рядка доступу.
+5. Given користувач X має `board_members(viewer)` на борді B і `task_shares(collaborator)` на тасці T цього борду, When X редагує T, Then дозволено (ефективна роль = max(viewer, collaborator) = collaborator); When X редагує іншу таску того ж борду, Then 403 `errors.board.readOnlyAccess` — task-level доступ ніколи не поширюється на інші таски й не понижує board-level роль.
+6. Given роль у `task_shares` вказана як "owner", When POST/PATCH, Then 400 `errors.sharing.invalidRole` — task_shares ніколи не приймає owner.
+7. Given PATCH і DELETE того самого доступу одночасно, When паралельні запити, Then один успіх, другий чистий 404 `errors.boardMembers.notFound`, без 500.
+
+## Локалізація
+- `errors.sharing.cannotShareWithSelf` — en: "You can't share with yourself.", uk: "Не можна поділитись із самим собою."
+- `errors.sharing.cannotIncludeOwner` — en: "The board owner already has full access.", uk: "Власник борду вже має повний доступ."
+
+## Відповідність scope
+В межах — цілісність даних доступу є невід'ємною частиною коректної реалізації US-013/US-014, не окремим розширенням. Concurrency-покриття (`boardMembers.concurrency.test.js`, `taskShares.concurrency.test.js`) — той самий стандарт якості, що вже застосований до attachments/tasks/time-entries.
+
+## Примітка щодо поточного стану
+US-013…US-017 позначені 🔧 У розробці: станом на internal-перевірку в цій сесії в робочій директорії вже присутні файли реалізації (міграції, сервіси, тест `sharing.test.js`), але вони ще не пройшли tester/code-reviewer у межах цієї розмови — статус зміниться на ✅ лише після Approve, за тим самим процесом, що й US-001…US-012.
+```

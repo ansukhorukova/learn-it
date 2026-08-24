@@ -1,23 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 
 import {
+  addTaskShare,
   createLinkAttachment,
   createManualTimeEntry,
   createNoteAttachment,
   deleteAttachment,
   deleteTimeEntry,
   listAttachments,
+  listTaskShares,
   listTimeEntries,
+  removeTaskShare,
   startTimer,
   stopTimer,
   updateTask,
+  updateTaskShareRole,
   updateTimeEntry,
   uploadFileAttachment,
 } from '../api/client';
 import { ALLOWED_FILE_MIME_TYPES, FILE_INPUT_ACCEPT, MAX_FILE_SIZE_BYTES } from '../constants/attachmentLimits';
 import { MINUTES_MAX, MINUTES_MIN, NOTE_MAX_LENGTH as TIME_NOTE_MAX_LENGTH } from '../constants/timeEntryLimits';
 import { formatDuration, formatSessionTimestamp, formatStopwatch } from '../lib/duration';
+import { canWrite } from '../lib/roles';
 import ConfirmDialog from './ConfirmDialog';
+import SharePanel from './SharePanel';
 import styles from './TaskPanel.module.css';
 
 const LINK_TITLE_MAX_LENGTH = 200;
@@ -48,8 +54,10 @@ function truncate(text, max) {
 
 // One attachment chip. `onDelete` opens the shared ConfirmDialog in the
 // parent (US9 AC: deletion needs confirmation, matching the existing
-// board/task delete pattern).
-function AttachmentChip({ attachment, t, onDelete }) {
+// board/task delete pattern). `canDelete` (US15/US16) hides the delete
+// control entirely for a viewer, rather than showing it disabled — matches
+// TaskCard's equivalent gating in BoardViewPage.jsx.
+function AttachmentChip({ attachment, t, onDelete, canDelete }) {
   let content;
   if (attachment.kind === 'file') {
     content = attachment.isImage ? (
@@ -82,14 +90,16 @@ function AttachmentChip({ attachment, t, onDelete }) {
   return (
     <li className={styles.chip}>
       {content}
-      <button
-        type="button"
-        className={styles.chipDelete}
-        onClick={() => onDelete(attachment)}
-        aria-label={t('attachment.delete.cta')}
-      >
-        ×
-      </button>
+      {canDelete && (
+        <button
+          type="button"
+          className={styles.chipDelete}
+          onClick={() => onDelete(attachment)}
+          aria-label={t('attachment.delete.cta')}
+        >
+          ×
+        </button>
+      )}
     </li>
   );
 }
@@ -106,6 +116,15 @@ function AttachmentChip({ attachment, t, onDelete }) {
 // attachmentCount and a naive full-object merge would clobber the card's
 // existing badge count back to 0.
 function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onTimeSummaryChange }) {
+  // US15/US16: a viewer (task.myRole, the caller's EFFECTIVE role — board
+  // role unless elevated by a task-level share, see tasks.service.js's
+  // getOwnedTaskWithBoard) can read everything in this panel but can't
+  // rename the task or add/delete attachments. Time-entry controls below are
+  // deliberately NEVER gated on this — US16 gives a viewer full access to
+  // their own timer/time-entries regardless of role.
+  const editable = canWrite(task.myRole);
+  const [sharingTask, setSharingTask] = useState(false);
+
   const [attachments, setAttachments] = useState(null); // null = loading
   const [loadErrorKey, setLoadErrorKey] = useState(null);
   const [bannerErrorKey, setBannerErrorKey] = useState(null);
@@ -610,9 +629,22 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
           ) : (
             <div className={styles.titleRow}>
               <h2 className={styles.title}>{task.title}</h2>
-              <button type="button" className={styles.renameButton} onClick={startEditingTitle}>
-                {t('task.rename.cta')}
-              </button>
+              {editable && (
+                <button type="button" className={styles.renameButton} onClick={startEditingTitle}>
+                  {t('task.rename.cta')}
+                </button>
+              )}
+              {/* US14/US15: only the parent board's owner manages
+                  task_shares — task.myRole === 'owner' is exactly that
+                  caller (see lib/authz.js's getTaskRole: 'owner' is only
+                  ever the board owner, never a board_members/task_shares
+                  row). A collaborator with full edit rights on this task
+                  still never sees this control. */}
+              {task.myRole === 'owner' && (
+                <button type="button" className={styles.renameButton} onClick={() => setSharingTask(true)}>
+                  {t('share.task.cta')}
+                </button>
+              )}
             </div>
           )}
 
@@ -874,6 +906,7 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
                           attachment={attachment}
                           t={t}
                           onDelete={setDeleteTarget}
+                          canDelete={editable}
                         />
                       ))}
                     </ul>
@@ -883,6 +916,10 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
           </div>
         )}
 
+        {/* US15/US16: a viewer can read every attachment above but can't add
+            one — the whole "add" section (file/link/note) is hidden, same
+            gating pattern as BoardViewPage.jsx's "Add task" button. */}
+        {editable && (
         <div className={styles.addSection}>
           <div className={styles.addRow}>
             <button
@@ -1004,7 +1041,23 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
             </form>
           )}
         </div>
+        )}
       </aside>
+
+      {sharingTask && (
+        <SharePanel
+          panelTitleKey="share.task.panelTitle"
+          idToken={idToken}
+          t={t}
+          onClose={() => setSharingTask(false)}
+          api={{
+            list: (token) => listTaskShares(token, task.id).then((data) => data.shares),
+            add: (token, payload) => addTaskShare(token, task.id, payload),
+            updateRole: (token, shareId, payload) => updateTaskShareRole(token, task.id, shareId, payload),
+            remove: (token, shareId) => removeTaskShare(token, task.id, shareId),
+          }}
+        />
+      )}
 
       {deleteTarget && (
         <ConfirmDialog

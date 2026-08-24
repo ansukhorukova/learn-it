@@ -162,6 +162,39 @@
       "timeBadge": "{duration}"
     }
   },
+  "share": {
+    "board": {
+      "panelTitle": "Share board",
+      "cta": "Share board"
+    },
+    "task": {
+      "panelTitle": "Share task",
+      "cta": "Share task"
+    },
+    "form": {
+      "emailLabel": "Email",
+      "emailPlaceholder": "name@example.com",
+      "roleLabel": "Role",
+      "submit": "Share",
+      "saving": "Sharing…"
+    },
+    "role": {
+      "owner": "Owner",
+      "collaborator": "Collaborator",
+      "viewer": "Viewer"
+    },
+    "members": {
+      "title": "People with access",
+      "empty": "Only you have access.",
+      "you": "(you)"
+    },
+    "remove": {
+      "cta": "Remove",
+      "confirmTitle": "Remove access?",
+      "confirmMessage": "\"{email}\" will lose access. This cannot be undone.",
+      "confirmButton": "Remove"
+    }
+  },
   "attachment": {
     "panel": {
       "title": "Attachments",
@@ -249,16 +282,29 @@
     "board": {
       "notFound": "Board not found.",
       "forbidden": "You don't have access to this board.",
+      "ownerOnly": "Only the board owner can do this.",
+      "readOnlyAccess": "You have view-only access to this board. Ask the owner for collaborator access to make changes.",
       "titleRequired": "Board title is required.",
       "titleTooLong": "Board title must be 100 characters or fewer."
     },
     "task": {
       "notFound": "Task not found.",
       "forbidden": "You don't have access to this task.",
+      "ownerOnly": "Only the board owner can do this.",
+      "readOnlyAccess": "You have view-only access to this task. Ask the owner for collaborator access to make changes.",
+      "reorderRequiresBoardAccess": "Moving this task or changing its status isn't available with access to only this one task — ask the owner for board access.",
       "titleRequired": "Task title is required.",
       "titleTooLong": "Task title must be 200 characters or fewer.",
       "invalidStatus": "Invalid task status.",
       "positionConflict": "This board changed while you were working. Please try again."
+    },
+    "share": {
+      "invalidRole": "Choose a valid role.",
+      "emailInvalid": "Enter a valid email address.",
+      "userNotFound": "No account is registered with this email yet.",
+      "selfShare": "You can't share with yourself.",
+      "memberNotFound": "This person no longer has access to the board.",
+      "shareNotFound": "This share no longer exists."
     },
     "attachment": {
       "notFound": "Attachment not found.",
