@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-24 — Boards overview / Board view / Task CRUD / drag-and-drop позначено done (FE + BE + БД, approved after 4 concurrency-bugs fixed across 5 review rounds); Shared-with-me/board members лишаються planned.
+Останнє оновлення: 2026-08-24 — Task attachments (файли/посилання/нотатки) позначено done (FE + BE + БД, approved after 2 security/correctness findings fixed and re-verified over real HTTP); visibility picker/attachment_viewers і секція "Час" у task panel лишаються planned.
 
 ## Легенда
 
@@ -39,7 +39,7 @@ graph TD
   subgraph Infra["Infra"]
     Infra_Docker["🟩 Infra_Docker<br/>docker-compose:<br/>db/minio/backend/frontend"]
     Infra_FirebaseAuth["🟩 Infra_FirebaseAuth<br/>Firebase Auth Spark,<br/>email+пароль+Google"]
-    Infra_MinIO["⬜ Infra_MinIO<br/>сховище вкладень"]
+    Infra_MinIO["🟩 Infra_MinIO<br/>сховище вкладень"]
     Infra_ProdDeploy["⬜ Infra_ProdDeploy<br/>Cloud Run + Hosting<br/>+ Neon + R2/Blaze"]
   end
 
@@ -54,8 +54,8 @@ graph TD
   Infra_Docker --> Infra_MinIO
   Infra_Docker -.план деплою.-> Infra_ProdDeploy
 
-  class FE_i18n,FE_Auth,BE_Health,BE_AuthMw,BE_UsersMe,DB_Users,Infra_Docker,Infra_FirebaseAuth done;
-  class FE_Settings,Infra_MinIO,Infra_ProdDeploy planned;
+  class FE_i18n,FE_Auth,BE_Health,BE_AuthMw,BE_UsersMe,DB_Users,Infra_Docker,Infra_FirebaseAuth,Infra_MinIO done;
+  class FE_Settings,Infra_ProdDeploy planned;
 ```
 
 ## Рядок 2 — Boards, Board view, шеринг борду
@@ -107,33 +107,34 @@ graph TD
   classDef planned fill:#37474f,color:#cfd8dc,stroke:#263238,stroke-width:1px,stroke-dasharray: 3 3;
 
   subgraph FE["Frontend"]
-    FE_TaskPanel["⬜ FE_TaskPanel<br/>таймер + сесії<br/>+ ручні записи"]
-    FE_Attachments["⬜ FE_Attachments<br/>файли/посилання/нотатки,<br/>visibility"]
+    FE_TaskPanel["🟨 FE_TaskPanel<br/>таймер + сесії<br/>+ ручні записи"]
+    FE_Attachments["🟩 FE_Attachments<br/>файли/посилання/нотатки<br/>(visibility picker: planned)"]
     FE_TeamView["⬜ FE_TeamView<br/>team view тотали"]
   end
 
   subgraph BE["Backend (Node.js REST /api/v1)"]
     BE_TimeEntries["⬜ BE_TimeEntries<br/>/tasks/:id/time-entries"]
     BE_TaskShares["⬜ BE_TaskShares<br/>/tasks/:id/shares"]
-    BE_Attachments["⬜ BE_Attachments<br/>/tasks/:id/attachments<br/>+ signed URL"]
+    BE_Attachments["🟩 BE_Attachments<br/>/tasks/:id/attachments<br/>+ signed URL"]
     BE_TeamView["⬜ BE_TeamView<br/>агрегація team view"]
   end
 
   subgraph DB["PostgreSQL"]
     DB_TimeEntries["⬜ DB_TimeEntries<br/>time_entries"]
     DB_TaskShares["⬜ DB_TaskShares<br/>task_shares"]
-    DB_Attachments["⬜ DB_Attachments<br/>attachments"]
+    DB_Attachments["🟩 DB_Attachments<br/>attachments"]
     DB_AttachmentViewers["⬜ DB_AttachmentViewers<br/>attachment_viewers"]
   end
 
   subgraph Infra["Infra"]
-    Infra_MinIO["⬜ Infra_MinIO<br/>сховище вкладень"]
+    Infra_MinIO["🟩 Infra_MinIO<br/>сховище вкладень"]
   end
 
   FE_TaskPanel --> BE_TimeEntries
   BE_TimeEntries --> DB_TimeEntries
   FE_TaskPanel --> BE_TaskShares
   BE_TaskShares --> DB_TaskShares
+  FE_TaskPanel --> FE_Attachments
   FE_Attachments --> BE_Attachments
   BE_Attachments --> DB_Attachments
   BE_Attachments --> DB_AttachmentViewers
@@ -141,7 +142,9 @@ graph TD
   FE_TeamView --> BE_TeamView
   BE_TeamView --> DB_TimeEntries
 
-  class FE_TaskPanel,FE_Attachments,FE_TeamView,BE_TimeEntries,BE_TaskShares,BE_Attachments,BE_TeamView,DB_TimeEntries,DB_TaskShares,DB_Attachments,DB_AttachmentViewers,Infra_MinIO planned;
+  class FE_Attachments,BE_Attachments,DB_Attachments,Infra_MinIO done;
+  class FE_TaskPanel progress;
+  class BE_TimeEntries,BE_TaskShares,BE_TeamView,DB_TimeEntries,DB_TaskShares,DB_AttachmentViewers,FE_TeamView planned;
 ```
 
 ## Схема БД (таблиці горизонтально, FK-звʼязки вертикально)
@@ -158,7 +161,7 @@ graph TD
   DB_AttachmentViewers["⬜ attachment_viewers<br/>attachment_id, user_id"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>locale, last_sign_in_provider"]
-  DB_Attachments["⬜ attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
+  DB_Attachments["🟩 attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
 
   DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position"]
 
@@ -175,8 +178,8 @@ graph TD
   DB_Attachments -->|FK| DB_Tasks
   DB_Tasks -->|FK| DB_Boards
 
-  class DB_Users,DB_Tasks,DB_Boards done;
-  class DB_BoardMembers,DB_TaskShares,DB_TimeEntries,DB_AttachmentViewers,DB_Attachments planned;
+  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments done;
+  class DB_BoardMembers,DB_TaskShares,DB_TimeEntries,DB_AttachmentViewers planned;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
@@ -189,3 +192,4 @@ graph TD
 - `Infra_MinIO` показаний і в Рядку 1 (піднято в `docker-compose`), і в Рядку 3 (куди `BE_Attachments` писатиме файли) — це один і той самий вузол інфраструктури, повторений у двох діаграмах для наочності, не два різні сховища.
 - Секції "Поза межами цього етапу" з CLAUDE.md (публічні посилання, коментарі, нотифікації, календар, складні графіки) свідомо не винесені на карту — вони поза скоупом продукту, не просто "ще не зроблено".
 - З фічі Boards/Board view/Task CRUD (2026-08-24): у проєкті зʼявилась перша автоматизована тест-інфраструктура — `vitest` проти окремої тестової Postgres-БД, `backend/test/concurrency/` (6 сценаріїв). Спільні locking-хелпери `backend/src/lib/db.js` (`lockRow`/`lockedUpdate`) і `backend/src/lib/authz.js` (`getOwnedBoard`) — це деталі реалізації всередині вже done-вузлів `BE_Boards`/`BE_Tasks`, окремих вузлів на карті не заведено, щоб не подрібнювати BE-шар нижче рівня ендпоінтів; згадано тут як доступна для наступних фіч база (regression-покриття конкурентних сценаріїв).
+- З фічі Task attachments (2026-08-24): `FE_TaskPanel` позначений 🟨 `progress`, не `done` — цей вузол на карті означає саме секцію "Час" (таймер, сесії, ручні записи; звʼязки лишились `FE_TaskPanel --> BE_TimeEntries` і `--> BE_TaskShares`, обидва ще planned). У цій фічі вперше зʼявився сам компонент `TaskPanel` (бічна панель таски) як контейнер, і в ньому повністю реалізовано й заапрувено вкладення — тому додано нову стрілку `FE_TaskPanel --> FE_Attachments`, а `FE_Attachments` позначений `done` окремо. Секція "Час" у цій панелі ще не будувалась. `attachment_viewers`/visibility-picker (`private`/`shared`/`selected`) свідомо не реалізовувались цього разу — зараз усі вкладення `private` за замовчуванням, без UI вибору; `DB_AttachmentViewers` лишається ⬜ до фічі шерингу. `image/svg+xml` виключено зі списку дозволених типів файлів (FE + BE) як вектор stored-XSS — виправлено до approve, не є прогалиною.

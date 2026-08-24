@@ -68,3 +68,55 @@ PROJECT_MAP.md — історія змін
     до approve, не відкладені.
   Коміт: docs: update PROJECT_MAP.md — Boards/Board view/Task CRUD
     позначено done після Approve з фіксом concurrency-багів
+
+2026-08-24 — Task attachments (файли/посилання/нотатки): done
+  Підсумок від fullstack-developer + code-reviewer (Approve, 2 security/
+    correctness знахідки виправлено й повторно перевірено через реальний
+    HTTP-шар):
+    - BE: GET/POST/DELETE /tasks/:id/attachments[/:attachmentId], нова
+      таблиця attachments (kind: file/link/note; visibility-enum присутній,
+      але завжди за замовчуванням private цього разу — без picker UI,
+      чисто відкладено, без часткової реалізації). Файли проксіюються
+      через backend (multer memory storage → S3 PutObjectCommand),
+      завантаження — через backend-issued signed GET URL (15 хв TTL),
+      новий env STORAGE_PUBLIC_ENDPOINT (окремо від контейнерного
+      STORAGE_ENDPOINT), щоб signed URL резолвились у реальному браузері.
+      MinIO bucket автостворюється при старті backend, якщо відсутній.
+      Storage cleanup при видаленні task/board (DB-рядки + MinIO-обʼєкти,
+      перевірено прямим S3 listing). lockRow-патерн (перевикористаний з
+      Boards/Tasks) захищає createAttachment від видалення task
+      "посеред" запиту. Бейдж кількості вкладень на картці таски тепер
+      показує реальний live-лічильник.
+    - FE: новий компонент TaskPanel — перша виділена бічна панель таски
+      (раніше існували лише картки в board view), вкладення згруповані
+      по типу (Files/Links/Notes) з лічильниками, add/delete UI для всіх
+      трьох видів.
+    - Security-фікс під час рев'ю: image/svg+xml прибрано зі списку
+      дозволених типів файлів (FE + BE) — code-reviewer визначив як
+      stored-XSS вектор на майбутнє шерингу; виправлено до approve,
+      не відкладено.
+    - Тести: новий закомічений concurrency-тест
+      backend/test/concurrency/attachments.concurrency.test.js — сюїт
+      тепер 3 файли / 8 тестів, усі проходять.
+  Позначено done: FE_Attachments, BE_Attachments, DB_Attachments,
+    Infra_MinIO (обидва входження — Рядок 1 і Рядок 3), DB_Attachments
+    в ER-схемі БД.
+  Позначено progress: FE_TaskPanel — новий компонент-контейнер зʼявився
+    і повністю хостить готові Attachments, але власна заявлена на карті
+    ціль вузла (секція "Час": таймер/сесії/ручні записи, звʼязки з
+    BE_TimeEntries/BE_TaskShares) цього разу не будувалась; додано
+    стрілку FE_TaskPanel --> FE_Attachments, щоб відобразити реальну
+    вкладеність компонентів.
+  Свідомо лишено planned: DB_AttachmentViewers і visibility-picker UI —
+    навмисно відкладено, немає споживача до фічі шерингу; підтверджено
+    чистим (жодної часткової visibility-логіки). BE_TimeEntries/
+    DB_TimeEntries, BE_TaskShares/DB_TaskShares, FE_TeamView/BE_TeamView
+    — не торкались цієї фічі.
+  Нових вузлів на карту не додано — фіча повністю лягла в існуючі вузли
+    Рядка 3 (+ одна нова стрілка FE_TaskPanel --> FE_Attachments).
+  Нових "відомих прогалин" не залоговано — обидві security/correctness
+    знахідки закриті до approve; тривіальне non-blocking спостереження
+    рев'юера (ідемпотентна подвійна спроба видалення в storage cleanup)
+    прямо позначене як "не потребує фіксу", не прогалина.
+  Коміт: docs: update PROJECT_MAP.md — Task attachments позначено done
+    після Approve, FE_TaskPanel — progress (лише секція вкладень)
