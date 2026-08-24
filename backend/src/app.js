@@ -7,6 +7,7 @@ const authRouter = require('./routes/auth.route');
 const boardsRouter = require('./routes/boards.route');
 const tasksRouter = require('./routes/tasks.route');
 const competenciesRouter = require('./routes/competencies.route');
+const languagesRouter = require('./routes/languages.route');
 
 const app = express();
 
@@ -52,5 +53,9 @@ app.use('/api/v1/tasks', tasksRouter);
 // under /users, since it's a shared catalog rather than per-user data. A
 // user's own picks live under /users/me/competencies (usersRouter above).
 app.use('/api/v1/competencies', competenciesRouter);
+
+// The languages dictionary (US-023) — same top-level-resource reasoning as
+// competenciesRouter above: a shared catalog, not per-user data.
+app.use('/api/v1/languages', languagesRouter);
 
 module.exports = app;

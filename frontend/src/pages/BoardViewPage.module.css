@@ -81,6 +81,36 @@
   margin-bottom: var(--space-4);
 }
 
+/* US-022 AC3: neutral (non-error) banner for a read-only public visitor —
+   deliberately distinct from .banner above, which is reserved for failures. */
+.infoBanner {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  font-size: 0.875rem;
+  margin-bottom: var(--space-4);
+}
+
+/* US-021/US-023: category + language badges under the board title. */
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.badge {
+  display: inline-block;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px var(--space-3);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 .createForm {
   display: flex;
   flex-direction: column;

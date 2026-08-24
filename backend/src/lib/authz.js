@@ -3,10 +3,23 @@ const { isUuid } = require('./uuid');
 const { NotFoundError, ForbiddenError } = require('./serviceErrors');
 
 // Effective-role model for the board/task sharing feature (US13-US17).
-// Three roles, ranked by how much they permit: viewer < collaborator <
-// owner. `owner` is never a row in `board_members`/`task_shares` — it's
+// Three "real" roles, ranked by how much they permit: viewer < collaborator
+// < owner. `owner` is never a row in `board_members`/`task_shares` — it's
 // always derived from `boards.owner_id`.
-const ROLE_RANK = { viewer: 1, collaborator: 2, owner: 3 };
+//
+// `public` (US-022) is a fourth, deliberately separate role: the read-only
+// access ANY authenticated user gets to a `boards.visibility = 'public'`
+// board with no `board_members`/`task_shares` row of their own. It ranks
+// alongside `viewer` (1) so every existing `minRole: 'viewer'` read gate
+// admits it for free, and every existing `minRole: 'collaborator'` write
+// gate rejects it for free (US-022 AC3) — no separate `public`-aware branch
+// needed at any of those call sites. It is NEVER assigned as a
+// `board_members`/`task_shares` row's own role — only computed on the fly by
+// getBoardRole/getTaskRole below, and only as a fallback once every real
+// source of access has come up empty (US-022 AC7: real membership always
+// wins over public base access — see higherRole below for the one place
+// that priority needs an explicit tie-break).
+const ROLE_RANK = { viewer: 1, public: 1, collaborator: 2, owner: 3 };
 
 function rankOf(role) {
   return role ? ROLE_RANK[role] || 0 : 0;
@@ -16,7 +29,22 @@ function rankOf(role) {
 // openapi.yaml): when a user has both a board-level role (via
 // board_members) and a task-level role (via task_shares) on the same task,
 // the MORE PERMISSIVE of the two wins as their effective role on that task.
+//
+// US-022 AC7 extends this: `public` never wins a tie against a real role.
+// `public` and `viewer` share the same rank (1), so the generic
+// rank-comparison below alone would non-deterministically favor whichever
+// argument happens to be `a` on a tie — e.g. tasks.service.js's
+// listTasksForBoard calls `higherRole(boardRole, taskShareRole)`, and a
+// public visitor (`boardRole: 'public'`) who ALSO happens to have a real
+// `task_shares` row of `viewer` on one specific task would otherwise still
+// show `myRole: 'public'` for that task instead of the real `viewer` grant.
+// Since `public` is only ever produced by getBoardRole/getTaskRole as a
+// last-resort fallback (never a real membership row), any real, truthy role
+// on the other side always wins outright — regardless of rank — before
+// falling through to the ordinary rank comparison.
 function higherRole(a, b) {
+  if (a === 'public' && b) return b;
+  if (b === 'public' && a) return a;
   return rankOf(a) >= rankOf(b) ? a || b : b;
 }
 
@@ -83,6 +111,12 @@ async function requireTaskOwner(taskId, ownerId, { trx, forUpdate = false } = {}
 // access, US14). Returns `{ board: null, role: null }` for a nonexistent
 // board rather than throwing, so callers can choose their own 404 wording;
 // requireBoardRole below is the throwing wrapper most callers actually want.
+//
+// US-022 AC2/AC7: when there's no real role (not the owner, no
+// `board_members` row) but the board is `visibility: 'public'`, the caller
+// still gets a role — `'public'` — rather than `null`. This is checked LAST,
+// after both real-access checks, so a real role (however it was granted)
+// always wins over the public fallback, never the other way around.
 async function getBoardRole(boardId, userId, { trx, forUpdate = false } = {}) {
   if (!isUuid(boardId)) return { board: null, role: null };
   const query = (trx || db)('boards').where({ id: boardId });
@@ -91,7 +125,9 @@ async function getBoardRole(boardId, userId, { trx, forUpdate = false } = {}) {
   if (!board) return { board: null, role: null };
   if (board.owner_id === userId) return { board, role: 'owner' };
   const member = await (trx || db)('board_members').where({ board_id: boardId, user_id: userId }).first();
-  return { board, role: member ? member.role : null };
+  if (member) return { board, role: member.role };
+  if (board.visibility === 'public') return { board, role: 'public' };
+  return { board, role: null };
 }
 
 // Throws NotFoundError if the board doesn't exist, ForbiddenError
@@ -124,12 +160,19 @@ async function requireBoardRole(boardId, userId, minRole, opts = {}) {
 // read. `role` alone can't distinguish this case — a task-share
 // `collaborator` and a board-member `collaborator` have the identical rank,
 // but only one of them is safe to let touch sibling rows.
+// US-022 AC2/AC4/AC7: same public-fallback as getBoardRole above, checked
+// only after both real sources of task access (board_members via the
+// parent board, task_shares on this exact task) come up empty — a public
+// visitor's `hasBoardAccess` is `false` (see tasks.service.js's updateTask
+// reorder-branch comment for why that specifically matters: a public
+// visitor must never be able to trigger a write that touches sibling tasks,
+// same as a task-share-only recipient).
 async function getTaskRole(taskId, userId, { trx } = {}) {
   if (!isUuid(taskId)) return { task: null, role: null, hasBoardAccess: false };
   const task = await (trx || db)('tasks')
     .join('boards', 'boards.id', 'tasks.board_id')
     .where('tasks.id', taskId)
-    .select('tasks.*', 'boards.owner_id as board_owner_id')
+    .select('tasks.*', 'boards.owner_id as board_owner_id', 'boards.visibility as board_visibility')
     .first();
   if (!task) return { task: null, role: null, hasBoardAccess: false };
   if (task.board_owner_id === userId) return { task, role: 'owner', hasBoardAccess: true };
@@ -138,7 +181,9 @@ async function getTaskRole(taskId, userId, { trx } = {}) {
     (trx || db)('task_shares').where({ task_id: taskId, user_id: userId }).first(),
   ]);
   const role = higherRole(member ? member.role : null, share ? share.role : null);
-  return { task, role, hasBoardAccess: !!member };
+  if (role) return { task, role, hasBoardAccess: !!member };
+  if (task.board_visibility === 'public') return { task, role: 'public', hasBoardAccess: false };
+  return { task, role: null, hasBoardAccess: false };
 }
 
 // Throws NotFoundError if the task doesn't exist, ForbiddenError

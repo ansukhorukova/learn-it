@@ -14,6 +14,7 @@ import {
   deleteTask,
   getBoard,
   listBoardMembers,
+  listCompetencyCatalog,
   listTasks,
   removeBoardMember,
   updateBoardMemberRole,
@@ -158,6 +159,30 @@ function Column({ status, label, tasks, columnLabels, onDelete, onStatusChange, 
   );
 }
 
+// US-021 AC7 / US-023 AC6: category + language badges under the board
+// title. Category resolves against the (active-only) competencies catalog
+// fetched alongside the board (see `load()` below); a category that's since
+// been deactivated (still assigned, per US-021 AC6) simply won't resolve and
+// its badge is omitted — the board keeps the assignment, only the label
+// can't be looked up. Language badges need no lookup: `board.languages`
+// already carries {id, slug} pairs directly.
+function BoardHeaderBadges({ board, categoryCatalog, t, styles }) {
+  const categoryEntry = board.categoryId ? categoryCatalog.find((entry) => entry.id === board.categoryId) : null;
+  const languages = board.languages || [];
+  if (!categoryEntry && languages.length === 0) return null;
+
+  return (
+    <div className={styles.badgeRow}>
+      {categoryEntry && <span className={styles.badge}>{t(`competency.${categoryEntry.slug}`)}</span>}
+      {languages.map((lang) => (
+        <span key={lang.id} className={styles.badge}>
+          {t(`language.${lang.slug}`)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // Board view (`/boards/:boardId`, US5-US8): three status columns, task
 // create/delete, drag-and-drop reordering with an accessible fallback
 // control, and a localized 403/404 page for a non-owner opening the URL
@@ -171,6 +196,10 @@ function BoardViewPage() {
   const [columns, setColumns] = useState(emptyColumns());
   const [pageState, setPageState] = useState('loading'); // loading | ready | forbidden | notFound | error
   const [bannerErrorKey, setBannerErrorKey] = useState(null);
+  // US-021 AC7: the board's categoryId badge resolves against this
+  // (active-only) catalog on the FE, same pattern as BoardsPage.jsx — the
+  // Board response never carries the category's slug directly.
+  const [categoryCatalog, setCategoryCatalog] = useState([]);
 
   const [creatingTask, setCreatingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -196,9 +225,14 @@ function BoardViewPage() {
     setPageState('loading');
     try {
       const idToken = await user.getIdToken();
-      const [boardData, tasksData] = await Promise.all([getBoard(idToken, boardId), listTasks(idToken, boardId)]);
+      const [boardData, tasksData, catalogRes] = await Promise.all([
+        getBoard(idToken, boardId),
+        listTasks(idToken, boardId),
+        listCompetencyCatalog(idToken).catch(() => ({ competencies: [] })),
+      ]);
       setBoard(boardData);
       setColumns(groupByStatus(tasksData.tasks));
+      setCategoryCatalog(catalogRes.competencies);
       setPageState('ready');
     } catch (err) {
       if (err.status === 403) setPageState('forbidden');
@@ -475,6 +509,9 @@ function BoardViewPage() {
             {pageState === 'ready' && board?.description && (
               <p className={styles.boardDescription}>{board.description}</p>
             )}
+            {pageState === 'ready' && board && (
+              <BoardHeaderBadges board={board} categoryCatalog={categoryCatalog} t={t} styles={styles} />
+            )}
           </div>
           {pageState === 'ready' && (
             <div className={styles.headerActions}>
@@ -495,6 +532,16 @@ function BoardViewPage() {
             </div>
           )}
         </div>
+
+        {/* US-022 AC3: read-only visitor via board visibility=public, not a
+            real board_members/task_shares grant — same read-only UI gate as
+            a viewer (canWrite(myRole) already excludes 'public' below), plus
+            this dedicated banner explaining why. */}
+        {pageState === 'ready' && board?.myRole === 'public' && (
+          <p className={styles.infoBanner} role="status">
+            {t('sharing.publicViewerBanner')}
+          </p>
+        )}
 
         {bannerErrorKey && (
           <p className={styles.banner} role="alert">

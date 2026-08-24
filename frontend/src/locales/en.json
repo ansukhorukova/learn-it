@@ -75,7 +75,39 @@
       "description": "Your learning boards at a glance.",
       "heading": "Your boards",
       "loading": "Loading boards…",
-      "empty": "You don't have any boards yet. Create your first one to start tracking learning time."
+      "empty": "You don't have any boards yet. Create your first one to start tracking learning time.",
+      "publicSection": {
+        "heading": "Public Boards",
+        "empty": "No public boards match your filters yet.",
+        "ownerLabel": "By {ownerName}"
+      }
+    },
+    "form": {
+      "category": {
+        "label": "Category",
+        "placeholder": "No category"
+      },
+      "visibility": {
+        "label": "Visibility",
+        "private": "Private",
+        "public": "Public",
+        "publicHint": "Anyone signed in can view this board (read-only). Editing still requires an invite."
+      },
+      "languages": {
+        "label": "Languages",
+        "placeholder": "Select languages…"
+      }
+    },
+    "filters": {
+      "category": {
+        "label": "Category",
+        "all": "All categories"
+      },
+      "language": {
+        "label": "Language",
+        "all": "All languages"
+      },
+      "clear": "Clear filters"
     },
     "create": {
       "cta": "Create board",
@@ -372,6 +404,14 @@
     "product_manager": "Product Manager",
     "data_scientist": "Data Scientist"
   },
+  "language": {
+    "english": "English",
+    "ukrainian": "Ukrainian",
+    "spanish": "Spanish"
+  },
+  "sharing": {
+    "publicViewerBanner": "This is a public board — you have view-only access."
+  },
   "errors": {
     "auth": {
       "tokenMissing": "You need to sign in to continue.",
@@ -398,7 +438,11 @@
       "readOnlyAccess": "You have view-only access to this board. Ask the owner for collaborator access to make changes.",
       "titleRequired": "Board title is required.",
       "titleTooLong": "Board title must be 100 characters or fewer.",
-      "descriptionTooLong": "Board description must be 2000 characters or fewer."
+      "descriptionTooLong": "Board description must be 2000 characters or fewer.",
+      "categoryInvalid": "This category doesn't exist.",
+      "categoryInactive": "This category is no longer available to assign.",
+      "visibilityInvalid": "Invalid visibility value.",
+      "languageInvalid": "One of the selected languages doesn't exist or is no longer available."
     },
     "task": {
       "notFound": "Task not found.",

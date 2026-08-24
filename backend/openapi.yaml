@@ -312,6 +312,38 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /languages:
+    get:
+      summary: The active languages dictionary
+      description: >
+        US-023 AC1 — what a board's language picker offers, and what `GET
+        /boards/public`'s `languageIds` filter matches against. Same
+        contract/pattern as `GET /competencies`: a language retired via
+        `is_active = false` (admin-managed, outside this API) simply stops
+        appearing here; any `board_languages` rows already referencing it
+        are unaffected.
+      operationId: listLanguagesCatalog
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The active dictionary, ordered by slug
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  languages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Language'
+                required: [languages]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /auth/provider-hint:
     get:
       summary: Which provider an email last signed in with (signup-conflict path only)
@@ -392,11 +424,22 @@ paths:
         live, never denormalized. `myRole` (US13-US17) is always `owner` on
         this endpoint specifically, since it only ever lists boards the
         caller owns — see `GET /boards/{id}` for a board where it can be
-        `collaborator`/`viewer`.
+        `collaborator`/`viewer`/`public`.
       operationId: listBoards
       tags: [boards]
       security:
         - firebaseIdToken: []
+      parameters:
+        - name: categoryId
+          in: query
+          required: false
+          description: >
+            US-021 AC9 — narrow "Мої дошки" to boards with this exact
+            categoryId. Omitted/empty means no filter. A malformed
+            (non-uuid) value matches zero boards rather than erroring.
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
           description: The caller's boards
@@ -416,7 +459,10 @@ paths:
           $ref: '#/components/responses/InternalError'
     post:
       summary: Create a board
-      description: Create board (US2). `ownerId` is always the caller's UID.
+      description: >
+        Create board (US2). `ownerId` is always the caller's UID.
+        `visibility` always starts `private` no matter what the request body
+        contains (US-022's API surface only exposes it on `PATCH`).
       operationId: createBoard
       tags: [boards]
       security:
@@ -435,11 +481,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/Board'
         '400':
-          description: Empty/too-long title, or too-long description
+          description: >
+            Empty/too-long title, too-long description, an unknown/inactive
+            categoryId (`errors.board.categoryInvalid`/
+            `errors.board.categoryInactive`, US-021), or an
+            invalid/inactive entry in languageIds
+            (`errors.board.languageInvalid`, US-023).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /boards/public:
+    get:
+      summary: Discover other users' public boards
+      description: >
+        US-024 — the "Public Boards" section on the boards overview: every
+        board with visibility public (US-022) except ones the caller owns
+        (those only ever appear in GET /boards, never duplicated here). No
+        pagination in this MVP pass. Never includes time_entries or any
+        attachment data for any board in the list (US-022 AC12/US-024 AC8)
+        — each item carries only fields anyone with an account may see,
+        plus the owner's display name (publicName falling back to
+        displayName).
+      operationId: listPublicBoards
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      parameters:
+        - name: categoryId
+          in: query
+          required: false
+          description: >
+            US-021 AC9 — narrow the list to boards with this exact
+            categoryId. Omitted/empty means no filter. A malformed
+            (non-uuid) value matches zero boards rather than erroring.
+          schema:
+            type: string
+            format: uuid
+        - name: languageIds
+          in: query
+          required: false
+          description: >
+            US-023 AC8 — narrow the list to boards tagged with ANY of these
+            language ids (OR, not AND). Repeat the parameter for multiple
+            values. Omitted means no filter; entries that aren't valid
+            uuids are dropped, and if that empties an otherwise non-empty
+            filter the result is zero boards rather than "no filter
+            applied".
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Other users' public boards, optionally filtered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  boards:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicBoard'
+                required: [boards]
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -458,9 +571,13 @@ paths:
       description: >
         Used by the board view header (US5). Since US13-US17, reachable by a
         shared board's collaborator/viewer too, not just the owner — access
-        requires ANY effective board-level role (`board_members`, or owner);
-        `myRole` on the response tells the FE which one so it can gate
-        write UI (e.g. hide "add task" for a viewer) without a second
+        requires ANY effective board-level role (`board_members`, or owner).
+        US-022 extends this further: a board with `visibility: 'public'` is
+        also readable by any authenticated user with no `board_members` row
+        of their own, who gets `myRole: 'public'` (real membership always
+        takes priority over this fallback, US-022 AC7). `myRole` on the
+        response tells the FE which one so it can gate write UI (e.g. hide
+        "add task" for a viewer or public visitor) without a second
         request.
       operationId: getBoard
       tags: [boards]
@@ -492,12 +609,19 @@ paths:
     patch:
       summary: Rename / update a board
       description: >
-        Rename board (US3). Owner-only — re-checked server-side on every
-        call, distinguishing a non-owner with no board access at all (403
-        `errors.board.forbidden`) from a collaborator/viewer who has access
-        but isn't the owner (403 `errors.board.ownerOnly`, US15: board
-        settings/rename stays owner-only even for a collaborator who can
-        otherwise edit tasks/attachments).
+        Rename board (US3), now also the write path for `categoryId`
+        (US-021), `visibility` (US-022), and `languageIds` (US-023).
+        Owner-only for every field on this endpoint — re-checked
+        server-side on every call, distinguishing a non-owner with no board
+        access at all (403 `errors.board.forbidden`) from a
+        collaborator/viewer/public visitor who has read access but isn't
+        the owner (403 `errors.board.ownerOnly`, US15: board settings stays
+        owner-only even for a collaborator who can otherwise edit
+        tasks/attachments). Every field is independently optional and
+        omitted-means-unchanged, EXCEPT `languageIds`, where an explicitly
+        empty array (`[]`) is a deliberate "clear every language" (US-023
+        AC3/AC4) — the field is simply absent from the body to leave the
+        current set untouched.
       operationId: updateBoard
       tags: [boards]
       security:
@@ -516,7 +640,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/Board'
         '400':
-          description: Empty/too-long title, or too-long description
+          description: >
+            Empty/too-long title, too-long description, an invalid
+            `visibility` value (`errors.board.visibilityInvalid`, US-022),
+            an unknown/inactive `categoryId`
+            (`errors.board.categoryInvalid`/`errors.board.categoryInactive`,
+            US-021), or an invalid/inactive entry in `languageIds`
+            (`errors.board.languageInvalid`, US-023) — no part of the patch
+            is applied when validation fails.
           content:
             application/json:
               schema:
@@ -526,7 +657,8 @@ paths:
         '403':
           description: >
             No board access at all (`errors.board.forbidden`), or a
-            collaborator/viewer who isn't the owner (`errors.board.ownerOnly`).
+            collaborator/viewer/public visitor who isn't the owner
+            (`errors.board.ownerOnly`).
           content:
             application/json:
               schema:
@@ -632,8 +764,12 @@ paths:
                     description: Sum of `totalSeconds` across every task on the board, for the caller's own time only.
                   myRole:
                     type: string
-                    enum: [owner, collaborator, viewer]
-                    description: The caller's board-level effective role (US13-US17). See each task's own `myRole` for a possible per-task override.
+                    enum: [owner, collaborator, viewer, public]
+                    description: >
+                      The caller's board-level effective role (US13-US17,
+                      extended by US-022's `public` — see the Board
+                      schema's `myRole` for what that means). See each
+                      task's own `myRole` for a possible per-task override.
                 required: [tasks, columnTotals, boardTotalSeconds, myRole]
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2111,21 +2247,57 @@ components:
         ownerId:
           type: string
           description: Firebase UID of the owner
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            US-021 — optional board category, an id from the shared
+            `competencies` dictionary (`GET /competencies`, AUTH-005) rather
+            than a separate catalog. `null` means "Без категорії"/no
+            category. The FE resolves the display label itself via
+            `competency.<slug>`, matching the already-fetched competencies
+            dictionary against this id — this response never carries a slug
+            directly.
+        languages:
+          type: array
+          description: >
+            US-023 — the board's tagged learning-material languages, each
+            an id/slug pair from the `languages` dictionary (`GET
+            /languages`). Empty array when the board has no language tags.
+          items:
+            $ref: '#/components/schemas/Language'
+        visibility:
+          type: string
+          enum: [private, public]
+          description: >
+            US-022 — `private` (default) restricts read access to the
+            owner and any `board_members`/`task_shares` grant, exactly like
+            before this feature existed. `public` additionally grants
+            read-only access to any authenticated user with none of those
+            (`myRole: 'public'` in their response) — it never changes any
+            mutation endpoint's authorization.
         taskCount:
           type: integer
         myRole:
           type: string
-          enum: [owner, collaborator, viewer]
+          enum: [owner, collaborator, viewer, public]
           description: >
-            The caller's effective role on this board (US13-US17): `owner`
-            (boards.owner_id), or their `board_members` role. Always `owner`
+            The caller's effective role on this board (US13-US17, extended
+            by US-022): `owner` (boards.owner_id), their `board_members`
+            role, or — only when neither applies AND the board is
+            `visibility: 'public'` — `public` (US-022 AC2/AC7: a real
+            membership role always wins over this fallback). Always `owner`
             on `GET /boards` (list is scoped to boards the caller owns);
-            can be `collaborator`/`viewer` on `GET /boards/{id}`.
+            can be `collaborator`/`viewer`/`public` on `GET /boards/{id}`.
         totalSeconds:
           type: integer
           description: >
             Caller's own all-time tracked time across every task on this
-            board (US12 AC6). Computed live, never denormalized.
+            board (US12 AC6). Computed live, never denormalized. For a
+            `myRole: 'public'` caller this is their own (typically zero)
+            time, never another user's — US-022 AC5, time_entries privacy
+            is unconditional.
         thisWeekSeconds:
           type: integer
           description: >
@@ -2137,10 +2309,77 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, title, description, accent, ownerId, taskCount, myRole, totalSeconds, thisWeekSeconds, createdAt, updatedAt]
+      required: [id, title, description, accent, ownerId, categoryId, languages, visibility, taskCount, myRole, totalSeconds, thisWeekSeconds, createdAt, updatedAt]
+
+    PublicBoard:
+      type: object
+      description: >
+        One item in `GET /boards/public` (US-024) — deliberately a SEPARATE,
+        narrower shape from `Board`, not a reuse of it: it adds `ownerName`
+        (who owns this board — always relevant for a board that isn't the
+        caller's own) and permanently omits `totalSeconds`/`thisWeekSeconds`
+        (US-022 AC12/US-024 AC8 — this list must never carry another user's
+        time-tracking data, not even in aggregate; `Board`'s schema requires
+        those fields, which is exactly why this isn't `Board`). `myRole` is
+        always `public` here (US-024 AC2 excludes the caller's own boards
+        from this list entirely, so there's no owner/collaborator/viewer
+        case to represent).
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        accent:
+          type: string
+          enum: [teal, rose, violet, sky, moss, clay]
+        ownerId:
+          type: string
+          description: Firebase UID of the owner
+        ownerName:
+          type: string
+          description: >
+            The owner's `publicName` if set, else their `displayName`
+            (US-024 AC8, same fallback resolution used throughout this API
+            wherever one user is shown to another).
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Language'
+        visibility:
+          type: string
+          enum: [public]
+          description: Always `public` — this endpoint only ever lists public boards.
+        taskCount:
+          type: integer
+        myRole:
+          type: string
+          enum: [public]
+          description: Always `public` — see the schema description above.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, title, description, accent, ownerId, ownerName, categoryId, languages, visibility, taskCount, myRole, createdAt, updatedAt]
 
     BoardWriteRequest:
       type: object
+      description: >
+        Used by both `POST /boards` and `PATCH /boards/{id}`. Every field is
+        independently optional and omitted-means-unchanged on `PATCH`
+        (`POST` instead treats an omitted field as its natural default — no
+        category, no languages, `private` visibility). `visibility` is
+        accepted by this schema but only ever honored on `PATCH` — see `POST
+        /boards`'s own description.
       properties:
         title:
           type: string
@@ -2152,6 +2391,45 @@ components:
         accent:
           type: string
           enum: [teal, rose, violet, sky, moss, clay]
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            US-021 — an id from `GET /competencies`, or `null` to
+            explicitly clear the category. Must be `is_active: true` at the
+            time it's assigned (400 `errors.board.categoryInactive`
+            otherwise) — an already-assigned category that's later
+            deactivated is left alone, not re-validated.
+        visibility:
+          type: string
+          enum: [private, public]
+          description: US-022 — `PATCH` only, owner-only. See `PATCH /boards/{id}`'s description.
+        languageIds:
+          type: array
+          description: >
+            US-023 — full-replace, not diff/append: every id in this array
+            becomes the board's entire language set, replacing whatever was
+            there before. Omit the field to leave the current set
+            untouched; pass `[]` to explicitly clear it. Every id must
+            exist and be `is_active: true` (400
+            `errors.board.languageInvalid` otherwise, all-or-nothing — no
+            id is applied if any one is invalid).
+          items:
+            type: string
+            format: uuid
+
+    Language:
+      type: object
+      description: One entry in the active languages dictionary (US-023), same shape/contract as Competency.
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+          description: Locale lookup key — rendered via `language.<slug>` in the FE's own dictionary, never returned pre-translated.
+      required: [id, slug]
 
     Task:
       type: object
@@ -2183,16 +2461,20 @@ components:
             COUNT, never denormalized. Rendered as a badge on the task card.
         myRole:
           type: string
-          enum: [owner, collaborator, viewer]
+          enum: [owner, collaborator, viewer, public]
           description: >
-            The caller's EFFECTIVE role on this task (US13-US17): `owner`
-            (the parent board's owner_id), else the MORE PERMISSIVE of any
-            `board_members` role on the task's parent board and any
-            `task_shares` role for this exact task — e.g. a board-level
-            `viewer` who was additionally task-shared as `collaborator` on
-            this one task sees `collaborator` here (and `viewer` on every
-            other task on the board). A `task_shares` row never widens
-            access to the board itself or to any other task.
+            The caller's EFFECTIVE role on this task (US13-US17, extended
+            by US-022): `owner` (the parent board's owner_id), else the
+            MORE PERMISSIVE of any `board_members` role on the task's
+            parent board and any `task_shares` role for this exact task —
+            e.g. a board-level `viewer` who was additionally task-shared as
+            `collaborator` on this one task sees `collaborator` here (and
+            `viewer` on every other task on the board). A `task_shares` row
+            never widens access to the board itself or to any other task.
+            `public` (US-022) applies only when NEITHER of those real
+            sources grants any access at all and the parent board is
+            `visibility: 'public'` — a real role, however small, always
+            wins over this fallback (US-022 AC7).
         totalSeconds:
           type: integer
           description: >

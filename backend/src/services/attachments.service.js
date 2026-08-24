@@ -124,28 +124,41 @@ async function toAttachment(row) {
 }
 
 // Privacy boundary (CLAUDE.md: "вкладення з visibility private не видно
-// нікому, крім автора"). Before US13-US17 (sharing), a second user could
-// never reach this task at all, so every row here was trivially only ever
-// read by its own author — the filter below did nothing in practice and was
-// never written. Now that a task can have a collaborator/viewer alongside
-// its owner, this must be explicit: a `private` row (still the only
-// visibility any create path ever writes — see insertAttachment below) is
-// filtered out for anyone but its `created_by`. `shared` passes through to
-// every caller who already got past the task-level access check above (that
-// check IS the "has access to this task" gate `shared` is defined against);
-// `selected` has no writer yet (attachment_viewers is schema-only this
-// pass — see its migration) so no row can currently have that visibility to
-// filter here, but the branch is written to hold once one does, not to be
-// revisited when the picker UI ships.
-function isVisibleTo(row, callerId) {
-  if (row.visibility === 'private') return row.created_by === callerId;
-  return true;
+// нікому, крім автора" / "selected — вибрані користувачі"). Before
+// US13-US17 (sharing), a second user could never reach this task at all, so
+// every row here was trivially only ever read by its own author — the
+// filter below did nothing in practice and was never written. Now that a
+// task can have a collaborator/viewer/public-visitor (US-022) alongside its
+// owner, this must be explicit:
+//   - `private` (still the only visibility any create path ever writes —
+//     see insertAttachment below) is visible only to its `created_by`.
+//   - `selected` is visible to its `created_by` plus anyone with a matching
+//     `attachment_viewers` row — no writer for this visibility exists yet
+//     (attachment_viewers is schema-only outside this check — see its
+//     migration), so no row can currently have it, but this is the actual
+//     gate a future picker UI needs, not a placeholder to revisit.
+//   - `shared` passes through to every caller who already got past the
+//     task-level access check above (that check IS the "has access to this
+//     task" gate `shared` is defined against) — including a `myRole:
+//     'public'` visitor (US-022 AC4: no exception for public access, same
+//     gate as viewer).
+// Async (a DB read for the `selected` case) — every call site below awaits
+// it accordingly.
+async function isVisibleTo(row, callerId) {
+  if (row.created_by === callerId) return true;
+  if (row.visibility === 'private') return false;
+  if (row.visibility === 'selected') {
+    const viewer = await db('attachment_viewers').where({ attachment_id: row.id, user_id: callerId }).first();
+    return !!viewer;
+  }
+  return true; // shared
 }
 
 async function listAttachmentsForTask(taskId, ownerId) {
   await getOwnedTaskWithBoard(taskId, ownerId);
   const rows = await db('attachments').where({ task_id: taskId }).orderBy('created_at', 'asc');
-  const visible = rows.filter((row) => isVisibleTo(row, ownerId));
+  const visibility = await Promise.all(rows.map((row) => isVisibleTo(row, ownerId)));
+  const visible = rows.filter((_row, index) => visibility[index]);
   return Promise.all(visible.map(toAttachment));
 }
 
@@ -315,7 +328,7 @@ async function deleteAttachment(taskId, attachmentId, ownerId) {
     // post-create — but this keeps the check where every other guard in
     // this transaction already lives rather than splitting it across an
     // unlocked pre-check and a locked mutation).
-    if (!isVisibleTo(row, ownerId)) throw new NotFoundError('errors.attachment.notFound');
+    if (!(await isVisibleTo(row, ownerId))) throw new NotFoundError('errors.attachment.notFound');
     await trx('attachments').where({ id: attachmentId }).delete();
     deletedRow = row;
   });

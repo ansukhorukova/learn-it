@@ -82,10 +82,25 @@ async function request(path, { method = 'GET', idToken, body, formData } = {}) {
   return payload;
 }
 
-// --- Boards (US1-US5) ---
+// --- Boards (US1-US5, filters extended by US-021/US-024) ---
 
-export function listBoards(idToken) {
-  return request('/boards', { idToken });
+// `categoryId` (US-021 AC9) narrows "Мої дошки" to boards with that exact
+// category. Omitted/falsy means no filter — never send an empty query param.
+export function listBoards(idToken, { categoryId } = {}) {
+  const query = categoryId ? `?categoryId=${encodeURIComponent(categoryId)}` : '';
+  return request(`/boards${query}`, { idToken });
+}
+
+// GET /boards/public (US-024) — the "Public Boards" section, filtered
+// independently of "Мої дошки" above. `languageIds` is OR-semantics
+// (US-023 AC8) and repeats the query param per id, per the OpenAPI
+// `style: form, explode: true` contract.
+export function listPublicBoards(idToken, { categoryId, languageIds } = {}) {
+  const params = new URLSearchParams();
+  if (categoryId) params.set('categoryId', categoryId);
+  (languageIds || []).forEach((id) => params.append('languageIds', id));
+  const query = params.toString();
+  return request(`/boards/public${query ? `?${query}` : ''}`, { idToken });
 }
 
 export function createBoard(idToken, payload) {
@@ -260,9 +275,16 @@ export function updateProfile(idToken, payload) {
   return request('/users/me', { method: 'PATCH', idToken, body: payload });
 }
 
-// GET /competencies — the active dictionary the picker offers (AUTH-005 AC1).
+// GET /competencies — the active dictionary the picker offers (AUTH-005 AC1),
+// reused as-is for the board category picker/badge (US-021).
 export function listCompetencyCatalog(idToken) {
   return request('/competencies', { idToken });
+}
+
+// GET /languages — the active languages dictionary (US-023 AC1), same
+// contract/shape as listCompetencyCatalog above.
+export function listLanguagesCatalog(idToken) {
+  return request('/languages', { idToken });
 }
 
 export function listUserCompetencies(idToken) {

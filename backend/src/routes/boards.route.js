@@ -27,7 +27,10 @@ const router = express.Router();
 // timeEntries.service.js for the matching reasoning on the tasks side).
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const boards = await boardsService.listBoardsForOwner(req.firebaseUser.uid);
+    // US-021 AC9: optional `categoryId` narrows "Мої дошки" to boards with
+    // that category — everything else about this list (owner-only scope,
+    // no pagination) is unchanged from US1.
+    const boards = await boardsService.listBoardsForOwner(req.firebaseUser.uid, { categoryId: req.query.categoryId });
     const totals = await timeEntriesService.timeTotalsForBoards(
       boards.map((board) => board.id),
       req.firebaseUser.uid,
@@ -37,6 +40,27 @@ router.get('/', requireAuth, async (req, res) => {
       return { ...board, totalSeconds: boardTotals.totalSeconds, thisWeekSeconds: boardTotals.thisWeekSeconds };
     });
     res.json({ boards: enriched });
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// GET /api/v1/boards/public — discovery list of other users' public boards
+// (US-024), filterable by `categoryId` (US-021 AC9) and `languageIds`
+// (US-023 AC8, OR semantics — repeat the query param for multiple values,
+// e.g. `?languageIds=a&languageIds=b`). Deliberately mounted BEFORE
+// `/:id` below — Express would otherwise match `GET /boards/public` against
+// the `:id` param route first (with `id = 'public'`), which is not a valid
+// board id and would 404 instead of ever reaching this handler. No
+// time_entries or attachment data is ever included here (US-022 AC12/US-024
+// AC8) — each item is the same safe subset listPublicBoards already builds.
+router.get('/public', requireAuth, async (req, res) => {
+  try {
+    const boards = await boardsService.listPublicBoards(req.firebaseUser.uid, {
+      categoryId: req.query.categoryId,
+      languageIds: req.query.languageIds,
+    });
+    res.json({ boards });
   } catch (err) {
     sendServiceError(res, err);
   }
