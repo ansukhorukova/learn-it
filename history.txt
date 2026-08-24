@@ -153,3 +153,56 @@ PROJECT_MAP.md — історія змін
     рекомендовано провести review pass, коли буде зручно.
   Коміт: docs: update PROJECT_MAP.md — task rename UI додано поза
     review pipeline на запит користувача, зафіксовано як follow-up
+
+2026-08-24 — Час у TaskPanel (US10 таймер, US11 ручні записи, US12 сесії/тотали): done
+  Підсумок від fullstack-developer + code-reviewer (Approve, 1 раунд
+    Request changes → фікс retry-логіки → повторний Approve):
+    - BE: 6 ендпоінтів на /tasks/:id/time-entries — POST start, POST stop,
+      POST manual, PATCH :entryId, DELETE :entryId, GET list. Нова
+      таблиця time_entries + міграція
+      20260824110000_create_time_entries_table.js з partial unique index
+      time_entries_one_active_per_user на (user_id) WHERE ended_at IS NULL
+      — гарантує один активний таймер на користувача на рівні БД, не лише
+      в сервісному шарі. Тотали додані на GET /boards/:id/tasks
+      (totalSeconds на тасці, columnTotals, boardTotalSeconds) і на
+      GET /boards (totalSeconds, thisWeekSeconds, заміна заглушки
+      board.card.totalTimePlaceholder) — розширення контракту вже done-
+      вузлів BE_Boards/BE_Tasks, за тим самим принципом, що й попередні
+      CRUD-розширення. thisWeekSeconds рахується від понеділка 00:00 UTC,
+      фіксовано явно, не локальний час користувача.
+    - FE: TaskPanel доповнено секцією "Час" — таймер старт/стоп, живий
+      лічильник, банер auto-stop-and-switch при переключенні активної
+      таски, форма ручного запису (хвилини + опційна нотатка), список
+      сесій з edit/delete.
+    - Приватність: time_entries завжди фільтруються WHERE user_id =
+      requester; PATCH/DELETE чужого чи неіснуючого запису дають
+      однаковий 404 (anti-enumeration, ніколи 403) — перевірено tester'ом
+      прямим SQL-інсертом "чужого" рядка.
+    - Рев'ю (Request changes → Approve): знайдено й виправлено race-баг
+      у retry-логіці startTimer — ліміт 2 спроби не витримував 3+
+      одночасних гонщиків; збільшено до MAX_START_ATTEMPTS=8 з чесним
+      errors.timeEntry.startConflict замість оманливого коду помилки.
+      Побічно виправлено баг у scripts/i18n-check.js (шлях був
+      frontend/locales/ замість frontend/src/locales/ — гейт локалізації
+      мовчки нічого не перевіряв); тепер гейт коректно розрізняє
+      відсутні в EN ICU plural-категорії (few/many) від справжніх
+      пропусків перекладу.
+    - Тести: новий backend/test/concurrency/timeEntries.concurrency.test.js
+      (4 сценарії: подвійний старт таймера з двох вкладок, PATCH-vs-
+      DELETE, DELETE-vs-DELETE на той самий запис) — сюїт тепер
+      12 concurrency-тестів (боарди/таски/вкладення/час).
+  Позначено done: BE_TimeEntries, DB_TimeEntries (Рядок 3 + ER-схема БД),
+    FE_TaskPanel (Рядок 3) — вузол досягнув повного done вперше: секція
+    "Час", заради якої вузол і був заведений на карті, тепер реалізована
+    й заапрувена.
+  Свідомо лишено planned (не торкнулось цієї фічі): BE_TaskShares/
+    DB_TaskShares, FE_TeamView/BE_TeamView, BE_BoardMembers/
+    DB_BoardMembers/FE_Shared.
+  Нових вузлів на карту не додано — фіча повністю лягла в існуючі вузли
+    Рядка 3; тотали на Boards/Tasks — розширення контракту, не нові
+    вузли.
+  Нових "відомих прогалин" не залоговано — знайдений під час рев'ю
+    race-баг закрито до approve, не відкладено.
+  Коміт: docs: update PROJECT_MAP.md — Час у TaskPanel (таймер, ручні
+    записи, сесії/тотали) позначено done після Approve з фіксом
+    retry-логіки startTimer
