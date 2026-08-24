@@ -12,6 +12,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import styles from './BoardsPage.module.css';
 
 const TITLE_MAX_LENGTH = 100;
+const DESCRIPTION_MAX_LENGTH = 2000;
 
 // Boards overview (`/`, US1). Renders the owner's boards in a grid with
 // create/rename/delete (US2-US4). No "Shared with me" section — sharing
@@ -29,12 +30,14 @@ function BoardsPage() {
 
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
   const [newAccent, setNewAccent] = useState(DEFAULT_BOARD_ACCENT);
   const [createErrorKey, setCreateErrorKey] = useState(null);
   const [submittingCreate, setSubmittingCreate] = useState(false);
 
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renameDescriptionValue, setRenameDescriptionValue] = useState('');
   const [renameErrorKey, setRenameErrorKey] = useState(null);
   const [savingRename, setSavingRename] = useState(false);
 
@@ -65,6 +68,7 @@ function BoardsPage() {
   function resetCreateForm() {
     setCreating(false);
     setNewTitle('');
+    setNewDescription('');
     setNewAccent(DEFAULT_BOARD_ACCENT);
     setCreateErrorKey(null);
   }
@@ -72,6 +76,7 @@ function BoardsPage() {
   async function handleCreateSubmit(event) {
     event.preventDefault();
     const trimmed = newTitle.trim();
+    const trimmedDescription = newDescription.trim();
     if (!trimmed) {
       setCreateErrorKey('board.create.validation.titleRequired');
       return;
@@ -80,12 +85,20 @@ function BoardsPage() {
       setCreateErrorKey('board.create.validation.titleTooLong');
       return;
     }
+    if (trimmedDescription.length > DESCRIPTION_MAX_LENGTH) {
+      setCreateErrorKey('board.create.validation.descriptionTooLong');
+      return;
+    }
 
     setSubmittingCreate(true);
     setCreateErrorKey(null);
     try {
       const idToken = await user.getIdToken();
-      const board = await createBoard(idToken, { title: trimmed, accent: newAccent });
+      const board = await createBoard(idToken, {
+        title: trimmed,
+        description: trimmedDescription || undefined,
+        accent: newAccent,
+      });
       setBoards((prev) => [...prev, board]);
       resetCreateForm();
     } catch (err) {
@@ -98,12 +111,14 @@ function BoardsPage() {
   function startRename(board) {
     setRenamingId(board.id);
     setRenameValue(board.title);
+    setRenameDescriptionValue(board.description || '');
     setRenameErrorKey(null);
   }
 
   async function submitRename(event, boardId) {
     event.preventDefault();
     const trimmed = renameValue.trim();
+    const trimmedDescription = renameDescriptionValue.trim();
     if (!trimmed) {
       setRenameErrorKey('board.rename.validation.titleRequired');
       return;
@@ -112,11 +127,15 @@ function BoardsPage() {
       setRenameErrorKey('board.rename.validation.titleTooLong');
       return;
     }
+    if (trimmedDescription.length > DESCRIPTION_MAX_LENGTH) {
+      setRenameErrorKey('board.rename.validation.descriptionTooLong');
+      return;
+    }
 
     setSavingRename(true);
     try {
       const idToken = await user.getIdToken();
-      const updated = await updateBoard(idToken, boardId, { title: trimmed });
+      const updated = await updateBoard(idToken, boardId, { title: trimmed, description: trimmedDescription || null });
       setBoards((prev) => prev.map((board) => (board.id === boardId ? updated : board)));
       setRenamingId(null);
     } catch (err) {
@@ -168,6 +187,20 @@ function BoardsPage() {
                 autoFocus
               />
               {createErrorKey && <span className={styles.fieldError}>{t(createErrorKey)}</span>}
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="new-board-description">
+                {t('board.create.descriptionLabel')}
+              </label>
+              <textarea
+                id="new-board-description"
+                className={`${styles.input} ${styles.textarea}`}
+                value={newDescription}
+                maxLength={DESCRIPTION_MAX_LENGTH}
+                placeholder={t('board.create.descriptionPlaceholder')}
+                onChange={(event) => setNewDescription(event.target.value)}
+              />
             </div>
 
             <div className={styles.field}>
@@ -235,6 +268,17 @@ function BoardsPage() {
                       onChange={(event) => setRenameValue(event.target.value)}
                       autoFocus
                     />
+                    <label className={styles.srOnly} htmlFor={`rename-description-${board.id}`}>
+                      {t('board.create.descriptionLabel')}
+                    </label>
+                    <textarea
+                      id={`rename-description-${board.id}`}
+                      className={`${styles.input} ${styles.textarea}`}
+                      value={renameDescriptionValue}
+                      maxLength={DESCRIPTION_MAX_LENGTH}
+                      placeholder={t('board.create.descriptionPlaceholder')}
+                      onChange={(event) => setRenameDescriptionValue(event.target.value)}
+                    />
                     {renameErrorKey && <span className={styles.fieldError}>{t(renameErrorKey)}</span>}
                     <div className={styles.formActions}>
                       <button type="submit" className={styles.submit} disabled={savingRename}>
@@ -250,6 +294,7 @@ function BoardsPage() {
                     <Link to={`/boards/${board.id}`} className={styles.cardTitleLink}>
                       <h2 className={styles.cardTitle}>{board.title}</h2>
                     </Link>
+                    {board.description && <p className={styles.cardDescription}>{board.description}</p>}
                     <p className={styles.cardMeta}>{t('board.card.taskCount', { count: board.taskCount })}</p>
                     {board.totalSeconds > 0 ? (
                       <>

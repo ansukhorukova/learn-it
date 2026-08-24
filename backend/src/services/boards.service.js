@@ -5,6 +5,7 @@ const { lockedUpdate } = require('../lib/db');
 const storage = require('../lib/storage');
 
 const TITLE_MAX_LENGTH = 100;
+const DESCRIPTION_MAX_LENGTH = 2000;
 
 // Small fixed palette of accent keys — the FE maps each to a design token
 // (frontend/src/styles/tokens.css: --board-accent-*), deliberately separate
@@ -28,6 +29,7 @@ function normalizeDescription(description) {
   if (description === undefined) return undefined;
   if (description === null) return null;
   const trimmed = String(description).trim();
+  if (trimmed.length > DESCRIPTION_MAX_LENGTH) throw new ValidationError('errors.board.descriptionTooLong');
   return trimmed || null;
 }
 

@@ -6,6 +6,7 @@ const { lockRow, lockedUpdate } = require('../lib/db');
 const storage = require('../lib/storage');
 
 const TITLE_MAX_LENGTH = 200;
+const NOTES_MAX_LENGTH = 2000;
 const STATUSES = ['planned', 'in_progress', 'done'];
 const DEFAULT_STATUS = STATUSES[0];
 
@@ -55,6 +56,18 @@ function validateTitle(title) {
 function validateStatus(status) {
   if (!STATUSES.includes(status)) throw new ValidationError('errors.task.invalidStatus');
   return status;
+}
+
+// Mirrors boards.service.js's normalizeDescription: same UI label
+// ("Description") reusing this pre-existing `notes` column rather than
+// adding a separate one (per product decision — see task panel's
+// description section).
+function normalizeNotes(notes) {
+  if (notes === undefined) return undefined;
+  if (notes === null) return null;
+  const trimmed = String(notes).trim();
+  if (trimmed.length > NOTES_MAX_LENGTH) throw new ValidationError('errors.task.notesTooLong');
+  return trimmed || null;
 }
 
 // Tasks have no `owner_id` of their own — authorization is derived through
@@ -135,8 +148,9 @@ async function listTasksForBoard(boardId, ownerId) {
   return { tasks, boardRole };
 }
 
-async function createTask(boardId, ownerId, { title } = {}) {
+async function createTask(boardId, ownerId, { title, notes } = {}) {
   const validTitle = validateTitle(title);
+  const validNotes = normalizeNotes(notes) ?? null;
 
   try {
     return await db.transaction(async (trx) => {
@@ -183,6 +197,7 @@ async function createTask(boardId, ownerId, { title } = {}) {
         .insert({
           board_id: boardId,
           title: validTitle,
+          notes: validNotes,
           status: DEFAULT_STATUS,
           position,
           created_by: ownerId,
@@ -229,13 +244,15 @@ async function reindexColumn(trx, orderedIds) {
  *   - cross-column drag: status changes, position = index in the new column.
  *   - same-column reorder: status omitted/unchanged, position = new index.
  */
-async function updateTask(taskId, ownerId, { title, status, position } = {}) {
+async function updateTask(taskId, ownerId, { title, notes, status, position } = {}) {
   // US15/US16: editing/moving a task needs collaborator+ — a viewer (board-
   // or task-level) is read-only here.
   const task = await getOwnedTaskWithBoard(taskId, ownerId, { minRole: 'collaborator' });
 
   const patch = {};
   if (title !== undefined) patch.title = validateTitle(title);
+  const normalizedNotes = normalizeNotes(notes);
+  if (normalizedNotes !== undefined) patch.notes = normalizedNotes;
 
   const isReordering = status !== undefined || position !== undefined;
   if (!isReordering) {

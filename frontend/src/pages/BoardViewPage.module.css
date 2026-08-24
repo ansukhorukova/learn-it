@@ -29,6 +29,13 @@
   margin: 0;
 }
 
+.boardDescription {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin: var(--space-1) 0 0;
+  max-width: 60ch;
+}
+
 .headerActions {
   display: flex;
   align-items: center;
@@ -98,6 +105,12 @@
 .input:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
+}
+
+.textarea {
+  min-height: 72px;
+  resize: vertical;
+  font-family: inherit;
 }
 
 .fieldError {

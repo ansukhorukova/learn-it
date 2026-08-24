@@ -200,7 +200,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Board'
         '400':
-          description: Empty or too-long title
+          description: Empty/too-long title, or too-long description
           content:
             application/json:
               schema:
@@ -281,7 +281,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Board'
         '400':
-          description: Empty or too-long title
+          description: Empty/too-long title, or too-long description
           content:
             application/json:
               schema:
@@ -444,6 +444,11 @@ paths:
                 title:
                   type: string
                   maxLength: 200
+                notes:
+                  type: string
+                  nullable: true
+                  maxLength: 2000
+                  description: Task description, shown/edited in the task panel.
               required: [title]
       responses:
         '201':
@@ -453,7 +458,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Task'
         '400':
-          description: Empty or too-long title
+          description: Empty/too-long title, or too-long description
           content:
             application/json:
               schema:
@@ -773,6 +778,11 @@ paths:
                 title:
                   type: string
                   maxLength: 200
+                notes:
+                  type: string
+                  nullable: true
+                  maxLength: 2000
+                  description: Task description, shown/edited in the task panel. Same access rule as the title-only edit path — never requires board-level access.
                 status:
                   type: string
                   enum: [planned, in_progress, done]
@@ -788,7 +798,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Task'
         '400':
-          description: Empty/too-long title, or an invalid status value
+          description: Empty/too-long title, too-long description, or an invalid status value
           content:
             application/json:
               schema:
@@ -1668,6 +1678,7 @@ components:
         description:
           type: string
           nullable: true
+          maxLength: 2000
         accent:
           type: string
           enum: [teal, rose, violet, sky, moss, clay]

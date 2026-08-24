@@ -27,6 +27,7 @@ import TaskPanel from '../components/TaskPanel';
 import styles from './BoardViewPage.module.css';
 
 const TITLE_MAX_LENGTH = 200;
+const DESCRIPTION_MAX_LENGTH = 2000;
 
 // Exact wording per CLAUDE.md / product-owner confirmation — do not rename.
 const COLUMNS = [
@@ -165,6 +166,7 @@ function BoardViewPage() {
 
   const [creatingTask, setCreatingTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
   const [taskErrorKey, setTaskErrorKey] = useState(null);
   const [submittingTask, setSubmittingTask] = useState(false);
 
@@ -314,6 +316,7 @@ function BoardViewPage() {
   async function handleCreateTask(event) {
     event.preventDefault();
     const trimmed = newTaskTitle.trim();
+    const trimmedDescription = newTaskDescription.trim();
     if (!trimmed) {
       setTaskErrorKey('task.create.validation.titleRequired');
       return;
@@ -322,14 +325,19 @@ function BoardViewPage() {
       setTaskErrorKey('task.create.validation.titleTooLong');
       return;
     }
+    if (trimmedDescription.length > DESCRIPTION_MAX_LENGTH) {
+      setTaskErrorKey('task.create.validation.descriptionTooLong');
+      return;
+    }
 
     setSubmittingTask(true);
     setTaskErrorKey(null);
     try {
       const idToken = await user.getIdToken();
-      const task = await createTask(idToken, boardId, { title: trimmed });
+      const task = await createTask(idToken, boardId, { title: trimmed, notes: trimmedDescription || undefined });
       setColumns((prev) => ({ ...prev, planned: [...prev.planned, task] }));
       setNewTaskTitle('');
+      setNewTaskDescription('');
       setCreatingTask(false);
     } catch (err) {
       setTaskErrorKey(err.messageKey || 'errors.generic');
@@ -377,6 +385,21 @@ function BoardViewPage() {
       return next;
     });
     setPanelTask((prev) => (prev && prev.id === taskId ? { ...prev, title } : prev));
+  }, []);
+
+  // Same shape as handleTaskTitleUpdated above, for the task description
+  // (`notes` field) edited in TaskPanel — keeps `panelTask` in sync so
+  // reopening the panel for the same task without a full re-fetch shows the
+  // saved value, not the stale one from when the panel first opened.
+  const handleTaskNotesUpdated = useCallback((taskId, notes) => {
+    setColumns((prev) => {
+      const next = { ...prev };
+      for (const status of Object.keys(next)) {
+        next[status] = next[status].map((task) => (task.id === taskId ? { ...task, notes } : task));
+      }
+      return next;
+    });
+    setPanelTask((prev) => (prev && prev.id === taskId ? { ...prev, notes } : prev));
   }, []);
 
   async function confirmDeleteTask() {
@@ -427,6 +450,9 @@ function BoardViewPage() {
               {t('boardView.backToBoards')}
             </Link>
             <h1 className={styles.boardTitle}>{pageState === 'loading' ? t('boardView.loading') : board?.title}</h1>
+            {pageState === 'ready' && board?.description && (
+              <p className={styles.boardDescription}>{board.description}</p>
+            )}
           </div>
           {pageState === 'ready' && (
             <div className={styles.headerActions}>
@@ -474,6 +500,17 @@ function BoardViewPage() {
               onChange={(event) => setNewTaskTitle(event.target.value)}
               autoFocus
             />
+            <label className={styles.srOnly} htmlFor="new-task-description">
+              {t('task.create.descriptionLabel')}
+            </label>
+            <textarea
+              id="new-task-description"
+              className={`${styles.input} ${styles.textarea}`}
+              value={newTaskDescription}
+              maxLength={DESCRIPTION_MAX_LENGTH}
+              placeholder={t('task.create.descriptionPlaceholder')}
+              onChange={(event) => setNewTaskDescription(event.target.value)}
+            />
             {taskErrorKey && <span className={styles.fieldError}>{t(taskErrorKey)}</span>}
             <div className={styles.formActions}>
               <button type="submit" className={styles.submit} disabled={submittingTask}>
@@ -485,6 +522,7 @@ function BoardViewPage() {
                 onClick={() => {
                   setCreatingTask(false);
                   setNewTaskTitle('');
+                  setNewTaskDescription('');
                   setTaskErrorKey(null);
                 }}
               >
@@ -544,6 +582,7 @@ function BoardViewPage() {
           onClose={() => setPanelTask(null)}
           onAttachmentCountChange={handleAttachmentCountChange}
           onTitleUpdated={handleTaskTitleUpdated}
+          onNotesUpdated={handleTaskNotesUpdated}
           onTimeSummaryChange={handleTimeSummaryChange}
         />
       )}
@@ -560,7 +599,17 @@ function BoardViewPage() {
 // that's an async call — this tiny wrapper resolves it once when the panel
 // opens and only then mounts TaskPanel, instead of threading token-loading
 // state through the panel component itself.
-function TaskPanelWithToken({ task, user, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onTimeSummaryChange }) {
+function TaskPanelWithToken({
+  task,
+  user,
+  t,
+  locale,
+  onClose,
+  onAttachmentCountChange,
+  onTitleUpdated,
+  onNotesUpdated,
+  onTimeSummaryChange,
+}) {
   const [idToken, setIdToken] = useState(null);
 
   useEffect(() => {
@@ -584,6 +633,7 @@ function TaskPanelWithToken({ task, user, t, locale, onClose, onAttachmentCountC
       onClose={onClose}
       onAttachmentCountChange={onAttachmentCountChange}
       onTitleUpdated={onTitleUpdated}
+      onNotesUpdated={onNotesUpdated}
       onTimeSummaryChange={onTimeSummaryChange}
     />
   );

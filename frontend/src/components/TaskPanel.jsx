@@ -28,6 +28,7 @@ import styles from './TaskPanel.module.css';
 
 const LINK_TITLE_MAX_LENGTH = 200;
 const NOTE_BODY_MAX_LENGTH = 2000;
+const TASK_DESCRIPTION_MAX_LENGTH = 2000;
 const NOTE_PREVIEW_LENGTH = 80;
 // Matches tasks.service.js's TITLE_MAX_LENGTH (backend/src/services/tasks.service.js)
 // and BoardViewPage.jsx's own copy of the same constant for task creation.
@@ -115,7 +116,7 @@ function AttachmentChip({ attachment, t, onDelete, canDelete }) {
 // PATCH response (tasks.service.js's non-reordering branch) has no
 // attachmentCount and a naive full-object merge would clobber the card's
 // existing badge count back to 0.
-function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onTimeSummaryChange }) {
+function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange, onTitleUpdated, onNotesUpdated, onTimeSummaryChange }) {
   // US15/US16: a viewer (task.myRole, the caller's EFFECTIVE role — board
   // role unless elevated by a task-level share, see tasks.service.js's
   // getOwnedTaskWithBoard) can read everything in this panel but can't
@@ -185,6 +186,14 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
   const [titleErrorKey, setTitleErrorKey] = useState(null);
   const [savingTitle, setSavingTitle] = useState(false);
 
+  // Task description — reuses the pre-existing `notes` column (tasks.service.js),
+  // labeled "Description" in the UI per product decision, same inline-edit
+  // shape as the title rename above.
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState(task.notes || '');
+  const [notesErrorKey, setNotesErrorKey] = useState(null);
+  const [savingNotes, setSavingNotes] = useState(false);
+
   const [addingLink, setAddingLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -218,6 +227,11 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
         setTitleErrorKey(null);
         return;
       }
+      if (editingNotes) {
+        setEditingNotes(false);
+        setNotesErrorKey(null);
+        return;
+      }
       if (editingEntryId) {
         cancelEditEntry();
         return;
@@ -226,7 +240,7 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, deleteTarget, deleteEntryTarget, editingTitle, editingEntryId]);
+  }, [onClose, deleteTarget, deleteEntryTarget, editingTitle, editingNotes, editingEntryId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -466,6 +480,38 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
     }
   }
 
+  function startEditingNotes() {
+    setNotesValue(task.notes || '');
+    setNotesErrorKey(null);
+    setEditingNotes(true);
+  }
+
+  // Same validation shape as handleTitleSubmit above: trim, then max-length
+  // via the FE's own pre-submit validation.* key, with a failed BE
+  // round-trip falling through to err.messageKey (errors.task.notesTooLong).
+  // Unlike the title, an empty description is valid (it's optional) — sent
+  // as `null` to clear it server-side rather than omitted.
+  async function handleNotesSubmit(event) {
+    event.preventDefault();
+    const trimmed = notesValue.trim();
+    if (trimmed.length > TASK_DESCRIPTION_MAX_LENGTH) {
+      setNotesErrorKey('task.notes.validation.descriptionTooLong');
+      return;
+    }
+
+    setSavingNotes(true);
+    setNotesErrorKey(null);
+    try {
+      const updated = await updateTask(idToken, task.id, { notes: trimmed || null });
+      onNotesUpdated?.(task.id, updated.notes);
+      setEditingNotes(false);
+    } catch (err) {
+      setNotesErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
   async function handleAddLink(event) {
     event.preventDefault();
     const trimmedTitle = linkTitle.trim();
@@ -651,6 +697,54 @@ function TaskPanel({ task, idToken, t, locale, onClose, onAttachmentCountChange,
           <button type="button" className={styles.closeButton} onClick={onClose} aria-label={t('attachment.panel.close')}>
             ×
           </button>
+        </div>
+
+        <div className={styles.notesSection}>
+          {editingNotes ? (
+            <form className={styles.form} onSubmit={handleNotesSubmit} noValidate>
+              <label className={styles.label} htmlFor="task-panel-notes-input">
+                {t('task.notes.label')}
+              </label>
+              <textarea
+                id="task-panel-notes-input"
+                className={styles.textarea}
+                value={notesValue}
+                maxLength={TASK_DESCRIPTION_MAX_LENGTH}
+                placeholder={t('task.notes.placeholder')}
+                onChange={(event) => setNotesValue(event.target.value)}
+                autoFocus
+              />
+              {notesErrorKey && <span className={styles.fieldError}>{t(notesErrorKey)}</span>}
+              <div className={styles.formActions}>
+                <button type="submit" className={styles.submit} disabled={savingNotes}>
+                  {t('common.save')}
+                </button>
+                <button
+                  type="button"
+                  className={styles.cancel}
+                  onClick={() => {
+                    setEditingNotes(false);
+                    setNotesErrorKey(null);
+                  }}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              {task.notes ? (
+                <p className={styles.notesText}>{task.notes}</p>
+              ) : (
+                <p className={styles.hint}>{t('task.notes.empty')}</p>
+              )}
+              {editable && (
+                <button type="button" className={styles.renameButton} onClick={startEditingNotes}>
+                  {task.notes ? t('task.notes.edit') : t('task.notes.add')}
+                </button>
+              )}
+            </>
+          )}
         </div>
 
         <h3 className={styles.subheading}>{t('timeEntry.section.title')}</h3>
