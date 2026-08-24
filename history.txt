@@ -253,3 +253,39 @@ PROJECT_MAP.md — історія змін
     "✅ Готово (пройшло code review)", дата 2026-08-24.
   Коміт: docs: update PROJECT_MAP.md — Board & Task Sharing (US13-US17)
     позначено done після Approve з фіксом reindex-leak
+
+2026-08-24 — Board/task description у FE (boards.description +
+  tasks.notes виведені в UI): done, без зміни статусів вузлів
+  Підсумок від fullstack-developer + code-reviewer (Approve, коміт
+    18fc643):
+    - BE: 2000-символьна валідація довжини додана для boards.description
+      (раніше не валідувалось) і tasks.notes (нова, ідентична
+      normalizeDescription/normalizeNotes у boards.service.js /
+      tasks.service.js), нові error-ключі errors.board.descriptionTooLong
+      / errors.task.notesTooLong, openapi.yaml оновлено (maxLength 2000
+      на обох полях, notes у create/update task body).
+    - FE: BoardsPage.jsx — поле опису у формі створення й inline-формі
+      перейменування борду, 2-рядковий preview на картці. BoardViewPage.jsx
+      — поле опису у формі створення таски, опис борду під заголовком
+      Board view. TaskPanel.jsx — нова секція опису (перегляд/редагування,
+      дзеркалить існуючий UX title-rename), реюзає колонку notes,
+      релейблену "Description" в UI (не нова колонка).
+    - Локалізація: повні EN/UK ключі board.create/rename.
+      descriptionLabel/descriptionPlaceholder/validation.
+      descriptionTooLong, task.create.descriptionLabel/
+      descriptionPlaceholder/validation.descriptionTooLong,
+      task.notes.label/placeholder/empty/edit/add.
+  Позначено done: —  (жоден вузол не змінив клас; boards.description і
+    tasks.notes існували в схемі й раніше, ендпоінти вже були done)
+  Позначено progress: —
+  Додано нові вузли: —  (фіча повністю в межах уже done FE_Boards,
+    FE_BoardView, FE_TaskPanel, BE_Boards, BE_Tasks, DB_Boards, DB_Tasks —
+    UI/валідаційне розширення вже задокументованих CRUD-ендпоінтів, той
+    самий принцип, що й попередні розширення контракту)
+  USER_STORIES.md: не оновлено цього разу — жодна US-стрічка не описує
+    саме "показати description/notes у FE" як окрему story (US-002/
+    US-003/US-006 вже "✅ Готово" і не згадують description в AC);
+    залишено на уточнення, чи заводити нову US, перш ніж редагувати
+    статуси.
+  Коміт: docs: update PROJECT_MAP.md — Board/task description у FE
+    задокументовано (без зміни статусів вузлів)
