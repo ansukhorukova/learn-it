@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 
 import { auth } from '../firebase/client';
 import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { updateProfile } from '../api/client';
 import styles from './AppHeader.module.css';
 
@@ -26,6 +27,22 @@ function AppHeader() {
   const { t, locale, setLocale, supportedLocales } = useI18n();
   const { user } = useAuthUser();
   const [syncErrorVisible, setSyncErrorVisible] = useState(false);
+
+  // US-029 AC3/AC8: the WS server closes the connection right after an
+  // `unauthorized` error frame — the only WS error that isn't scoped to one
+  // screen's subscription, so it's surfaced here rather than in every chat
+  // page individually. `useWebSocket()` already de-dupes to the one shared
+  // session connection, so mounting it here doesn't open a second socket.
+  const { status, onMessage } = useWebSocket();
+  const [wsAuthErrorVisible, setWsAuthErrorVisible] = useState(false);
+
+  useEffect(() => {
+    return onMessage((frame) => {
+      if (frame.type === 'error' && frame.messageKey === 'ws.error.unauthorized') {
+        setWsAuthErrorVisible(true);
+      }
+    });
+  }, [onMessage]);
 
   // AC3/AC4: flip the client-side locale — and everything t() renders —
   // BEFORE the network call, never waiting on it. AC5: if the PATCH below
@@ -53,6 +70,16 @@ function AppHeader() {
         {t('app.name')}
       </Link>
       <div className={styles.actions}>
+        {wsAuthErrorVisible && (
+          <span className={styles.wsBanner} role="alert">
+            {t('ws.error.unauthorized')}
+          </span>
+        )}
+        {!wsAuthErrorVisible && status === 'reconnecting' && (
+          <span className={styles.wsBanner} role="status">
+            {t('ws.status.reconnecting')}
+          </span>
+        )}
         <div className={styles.languageGroup}>
           {/* AC2: built from the supported-locales registry, not a hardcoded
               two-option list — a future third locale needs only a new entry
@@ -87,6 +114,12 @@ function AppHeader() {
             </span>
           )}
         </div>
+        <Link to="/people" className={styles.navLink}>
+          {t('app.nav.people')}
+        </Link>
+        <Link to="/messages" className={styles.navLink}>
+          {t('app.nav.messages')}
+        </Link>
         <Link to="/profile" className={styles.navLink}>
           {t('app.nav.profile')}
         </Link>

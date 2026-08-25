@@ -1,5 +1,7 @@
+const http = require('http');
 const app = require('./app');
 const storage = require('./lib/storage');
+const { attachWebSocketServer } = require('./ws/server');
 
 const PORT = process.env.PORT || 4000;
 
@@ -17,9 +19,17 @@ async function start() {
     console.error('Failed to ensure storage bucket exists on startup', err);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  // US-029: WS is attached to this SAME http.Server/port rather than a
+  // separate process — see ws/server.js's header comment for the full
+  // rationale. This is the one place `docker-compose.yml` would need a new
+  // service if that decision ever changed; it hasn't, so compose is
+  // untouched by this pass (US-029 AC7).
+  const server = http.createServer(app);
+  attachWebSocketServer(server);
+
+  server.listen(PORT, '0.0.0.0', () => {
     // eslint-disable-next-line no-console
-    console.log(`Backend API listening on port ${PORT}`);
+    console.log(`Backend API listening on port ${PORT} (HTTP + WS at /ws)`);
   });
 }
 

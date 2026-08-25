@@ -4,6 +4,11 @@ import AuthPage from './pages/AuthPage';
 import BoardsPage from './pages/BoardsPage';
 import BoardViewPage from './pages/BoardViewPage';
 import ProfilePage from './pages/ProfilePage';
+import PeopleSearchPage from './pages/PeopleSearchPage';
+import UserProfilePage from './pages/UserProfilePage';
+import DmThreadsPage from './pages/DmThreadsPage';
+import DmThreadPage from './pages/DmThreadPage';
+import CompetencyChatPage from './pages/CompetencyChatPage';
 import { useAuthUser } from './auth/useAuthUser';
 import { useLocaleSync } from './i18n/useLocaleSync';
 
@@ -23,6 +28,11 @@ function App() {
       <Route path="/" element={<BoardsPage />} />
       <Route path="/boards/:boardId" element={<BoardViewPage />} />
       <Route path="/profile" element={<ProfilePage />} />
+      <Route path="/people" element={<PeopleSearchPage />} />
+      <Route path="/users/:id" element={<UserProfilePage />} />
+      <Route path="/messages" element={<DmThreadsPage />} />
+      <Route path="/messages/:threadId" element={<DmThreadPage />} />
+      <Route path="/competencies/:id/chat" element={<CompetencyChatPage />} />
     </Routes>
   );
 }

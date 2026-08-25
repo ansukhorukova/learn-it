@@ -1,7 +1,7 @@
 const express = require('express');
 
 const requireAuth = require('../middleware/auth.middleware');
-const { getOrCreateUser, updateProfile } = require('../services/users.service');
+const { getOrCreateUser, updateProfile, searchByCompetency, getPublicProfile } = require('../services/users.service');
 const competenciesService = require('../services/competencies.service');
 const { sendError, sendServiceError } = require('../lib/apiError');
 
@@ -81,6 +81,32 @@ router.delete('/me/competencies/:id', requireAuth, async (req, res) => {
   try {
     await competenciesService.removeUserCompetency(req.firebaseUser.uid, req.params.id);
     return res.status(204).end();
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// GET /api/v1/users/search?competencyId= — US-025. Registered BEFORE the
+// GET /:id route below so 'search' is never captured as an :id value (same
+// reasoning as /me/competencies above being registered before a hypothetical
+// /:id route would be).
+router.get('/search', requireAuth, async (req, res) => {
+  try {
+    const users = await searchByCompetency(req.query.competencyId);
+    return res.json({ users });
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// GET /api/v1/users/:id — public profile (US-026). Deliberately the LAST
+// route in this router: Express matches routes in registration order, and
+// this `:id` wildcard would otherwise swallow '/me', '/me/competencies',
+// and '/search' as a literal user id.
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const profile = await getPublicProfile(req.params.id);
+    return res.json(profile);
   } catch (err) {
     return sendServiceError(res, err);
   }

@@ -1,0 +1,123 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  padding: var(--space-6);
+  flex: 1;
+  max-width: 640px;
+}
+
+.hint,
+.error {
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  color: var(--color-text-muted);
+}
+
+.section {
+  margin-top: var(--space-5);
+}
+
+.competencyList {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.competencyRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+.competencyLabel {
+  font-size: 0.9375rem;
+}
+
+.teacherBadge {
+  background: var(--color-accent-amber);
+  color: var(--color-bg);
+  border-radius: 999px;
+  padding: 2px var(--space-3);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.disabledHint {
+  color: var(--color-text-faint);
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+.pickerBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 320px;
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.input {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: var(--space-3);
+  font-size: 0.9375rem;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.messageButton {
+  align-self: flex-start;
+  background: var(--color-text);
+  color: var(--color-bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.messageButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.messageButton:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}

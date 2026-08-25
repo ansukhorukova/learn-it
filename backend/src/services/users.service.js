@@ -1,6 +1,7 @@
 const db = require('../db/knex');
 const { SUPPORTED_LOCALES, resolveLocale } = require('../config/locales');
-const { ValidationError } = require('../lib/serviceErrors');
+const { ValidationError, NotFoundError } = require('../lib/serviceErrors');
+const { isUuid } = require('../lib/uuid');
 
 // AUTH-004 AC4.
 const PUBLIC_NAME_MAX_LENGTH = 100;
@@ -161,4 +162,118 @@ async function updateProfile(userId, { publicName, locale } = {}) {
   return toProfile(row);
 }
 
-module.exports = { getOrCreateUser, getSignInProviderForEmail, updateProfile, PUBLIC_NAME_MAX_LENGTH };
+// AUTH-004 AC5/AC6 public_name-falls-back-to-display_name pattern, same
+// resolution every other resource in this codebase uses when showing one
+// user's name to another (taskComments.service.js's authorName,
+// boardMembers.service.js's displayName, dmThreads.service.js's
+// otherUser.name, ...).
+function resolvePublicDisplayName(row) {
+  return row.public_name || row.display_name;
+}
+
+/**
+ * GET /api/v1/users/search?competencyId= (US-025). Public profiles of every
+ * user whose `user_competencies` row for THIS SPECIFIC competency has
+ * `willing_to_teach = true` (AC1 — literally "willing to teach it", not
+ * merely "has it listed"). For each match, the response also carries that
+ * user's FULL list of `willing_to_teach = true` competencies (AC4 — useful
+ * context beyond just the one searched for), never email/boards/time
+ * (AC4's explicit privacy boundary).
+ *
+ * A missing/malformed `competencyId` (AC2 — "запит до BE не виконується
+ * без параметра" is the FE's job; this is the defensive BE-side twin of
+ * that) or one that matches nobody (AC3) both resolve to a plain empty
+ * array rather than an error — there's no AC-defined error path for this
+ * query param, and "nothing matched" is exactly the AC3 empty-state case
+ * either way.
+ */
+async function searchByCompetency(competencyId) {
+  if (!isUuid(competencyId)) return [];
+
+  const matches = await db('user_competencies')
+    .join('users', 'users.id', 'user_competencies.user_id')
+    .where({
+      'user_competencies.competency_id': competencyId,
+      'user_competencies.willing_to_teach': true,
+    })
+    .select('users.id as user_id', 'users.display_name', 'users.public_name');
+  if (matches.length === 0) return [];
+
+  const userIds = matches.map((m) => m.user_id);
+  const willingRows = await db('user_competencies')
+    .leftJoin('competencies', 'competencies.id', 'user_competencies.competency_id')
+    .whereIn('user_competencies.user_id', userIds)
+    .andWhere('user_competencies.willing_to_teach', true)
+    .select(
+      'user_competencies.user_id',
+      'user_competencies.competency_id',
+      'user_competencies.is_custom',
+      'user_competencies.custom_label',
+      'competencies.slug as competency_slug',
+    );
+
+  const willingByUser = new Map();
+  for (const row of willingRows) {
+    if (!willingByUser.has(row.user_id)) willingByUser.set(row.user_id, []);
+    willingByUser.get(row.user_id).push({
+      competencyId: row.competency_id,
+      competencySlug: row.competency_slug || null,
+      isCustom: row.is_custom,
+      customLabel: row.custom_label,
+      willingToTeach: true,
+    });
+  }
+
+  return matches.map((m) => ({
+    id: m.user_id,
+    name: resolvePublicDisplayName(m),
+    competencies: willingByUser.get(m.user_id) || [],
+  }));
+}
+
+/**
+ * GET /api/v1/users/:id (US-026). Any valid userId — not gated by shared
+ * board/task membership at all (AC1's "доступний для БУДЬ-ЯКОГО валідного
+ * userId"), this is the one deliberately wide-open cross-user read in the
+ * whole API. Returns the FULL competency list (not just willing-to-teach
+ * ones, unlike searchByCompetency above) with a per-entry `willingToTeach`
+ * flag so the FE can render the "Готовий(а) викладати" badge (AC1).
+ *
+ * `userId` is a Firebase UID (`users.id` is `text`, not `uuid` — see the
+ * users table migration) so there's no format to pre-validate the way
+ * isUuid() does for every other resource's route param; a nonexistent id
+ * (malformed or simply never registered) both resolve to the same 404
+ * (AC2) — there is no meaningful "malformed vs missing" distinction to make
+ * for an opaque string id.
+ */
+async function getPublicProfile(userId) {
+  const user = await db('users').where({ id: userId }).first();
+  if (!user) throw new NotFoundError('errors.user.notFound');
+
+  const competencyRows = await db('user_competencies')
+    .leftJoin('competencies', 'competencies.id', 'user_competencies.competency_id')
+    .where('user_competencies.user_id', userId)
+    .select('user_competencies.*', 'competencies.slug as competency_slug')
+    .orderBy('user_competencies.created_at', 'asc');
+
+  return {
+    id: user.id,
+    name: resolvePublicDisplayName(user),
+    competencies: competencyRows.map((row) => ({
+      competencyId: row.competency_id,
+      competencySlug: row.competency_slug || null,
+      isCustom: row.is_custom,
+      customLabel: row.custom_label,
+      willingToTeach: row.willing_to_teach,
+    })),
+  };
+}
+
+module.exports = {
+  getOrCreateUser,
+  getSignInProviderForEmail,
+  updateProfile,
+  searchByCompetency,
+  getPublicProfile,
+  PUBLIC_NAME_MAX_LENGTH,
+};

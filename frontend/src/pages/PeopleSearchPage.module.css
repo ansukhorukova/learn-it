@@ -1,0 +1,134 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  padding: var(--space-6);
+  flex: 1;
+  max-width: 960px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 360px;
+  margin: var(--space-5) 0 var(--space-4);
+}
+
+.label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.input {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: var(--space-3);
+  font-size: 0.9375rem;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.fieldError {
+  color: var(--color-danger);
+  font-size: 0.8125rem;
+}
+
+.hint,
+.error {
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.chatLink {
+  color: var(--color-accent-amber);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chatLink:hover,
+.chatLink:focus-visible {
+  text-decoration: underline;
+}
+
+.resultsCount {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin: 0 0 var(--space-4);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-5);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cardTitle {
+  font-size: 1.0625rem;
+  margin: 0;
+}
+
+.badgeSectionLabel {
+  color: var(--color-text-faint);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.badge {
+  display: inline-block;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px var(--space-3);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.viewButton {
+  align-self: flex-start;
+  background: var(--color-text);
+  color: var(--color-bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.viewButton:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}

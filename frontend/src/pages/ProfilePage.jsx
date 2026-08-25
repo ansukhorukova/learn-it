@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 
 import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
@@ -257,6 +257,15 @@ function ProfilePage() {
                         )}
                       </div>
                       <div className={styles.competencyActions}>
+                        {/* US-028 AC2's "чи довідника компетенцій" entry point — a
+                            custom (isCustom) entry has no real `competencies`
+                            row/competencyId (CLAUDE.md user_competencies note),
+                            so there is no group chat room to link to for it. */}
+                        {!competency.isCustom && (
+                          <Link to={`/competencies/${competency.competencyId}/chat`} className={styles.iconButton}>
+                            {t('chat.competency.openCta')}
+                          </Link>
+                        )}
                         <label className={styles.toggleLabel}>
                           <input
                             type="checkbox"

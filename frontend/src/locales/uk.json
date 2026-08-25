@@ -2,7 +2,9 @@
   "app": {
     "name": "Learning Time Tracker",
     "nav": {
-      "profile": "Профіль"
+      "profile": "Профіль",
+      "people": "Люди",
+      "messages": "Повідомлення"
     },
     "header": {
       "language": {
@@ -402,6 +404,63 @@
           "other": "Готовий викладати {count} з {total}"
         }
       }
+    },
+    "public": {
+      "title": "Профіль",
+      "competenciesTitle": "Компетенції",
+      "willingToTeachBadge": "Готовий(а) викладати",
+      "notFound": "Такого профілю не існує.",
+      "messageButton": {
+        "cta": "Написати повідомлення",
+        "disabledNoCompetencies": "Ця людина ще не позначила готовність викладати жодну компетенцію."
+      },
+      "pickCompetencyPrompt": "За якою компетенцією?"
+    }
+  },
+  "people": {
+    "search": {
+      "title": "Знайти людей для навчання",
+      "competencyLabel": "Компетенція",
+      "competencyPlaceholder": "Оберіть компетенцію…",
+      "emptyNoSelection": "Оберіть компетенцію, щоб побачити, хто готовий її викладати.",
+      "emptyNoResults": "Поки що ніхто не готовий викладати цю компетенцію.",
+      "resultsCount": {
+        "one": "Знайдено {count} людину",
+        "few": "Знайдено {count} людини",
+        "many": "Знайдено {count} людей",
+        "other": "Знайдено {count} людини"
+      },
+      "willingToTeachBadge": "Готовий(а) викладати",
+      "viewProfile": "Переглянути профіль"
+    }
+  },
+  "chat": {
+    "dm": {
+      "listTitle": "Повідомлення",
+      "emptyList": "Розмов ще немає.",
+      "threadHeading": "Чат з {name} — {competency}",
+      "messagePlaceholder": "Напишіть повідомлення…",
+      "send": "Надіслати",
+      "sending": "Надсилання…",
+      "emptyThread": "Повідомлень ще немає — напишіть перший!"
+    },
+    "competency": {
+      "title": "Чат: {competency}",
+      "messagePlaceholder": "Напишіть повідомлення…",
+      "send": "Надіслати",
+      "sending": "Надсилання…",
+      "empty": "Повідомлень ще немає — почніть розмову!",
+      "openCta": "Відкрити груповий чат"
+    }
+  },
+  "ws": {
+    "error": {
+      "unauthorized": "Ваша сесія застаріла — оновіть сторінку.",
+      "subscribeForbidden": "У вас немає доступу до цієї розмови.",
+      "badRequest": "Щось пішло не так із цим запитом."
+    },
+    "status": {
+      "reconnecting": "Повторне підключення…"
     }
   },
   "competency": {
@@ -500,6 +559,22 @@
     "comment": {
       "bodyRequired": "Введіть текст коментаря.",
       "bodyTooLong": "Коментар має містити не більше 2000 символів."
+    },
+    "user": {
+      "notFound": "Користувача не знайдено."
+    },
+    "dmThread": {
+      "cannotMessageSelf": "Ви не можете написати повідомлення самому собі.",
+      "competencyNotOffered": "Ця людина не позначила цю компетенцію як таку, яку готова викладати.",
+      "invalidPayload": "Щось не так із цим запитом.",
+      "forbidden": "У вас немає доступу до цієї розмови.",
+      "messageBodyRequired": "Введіть текст повідомлення.",
+      "messageBodyTooLong": "Повідомлення має містити не більше 2000 символів."
+    },
+    "competencyChat": {
+      "messageBodyRequired": "Введіть текст повідомлення.",
+      "messageBodyTooLong": "Повідомлення має містити не більше 2000 символів.",
+      "notFound": "Цей чат компетенції недоступний."
     },
     "generic": "Щось пішло не так. Спробуйте ще раз."
   },

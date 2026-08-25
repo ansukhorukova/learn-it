@@ -2,7 +2,9 @@
   "app": {
     "name": "Learning Time Tracker",
     "nav": {
-      "profile": "Profile"
+      "profile": "Profile",
+      "people": "People",
+      "messages": "Messages"
     },
     "header": {
       "language": {
@@ -394,6 +396,61 @@
           "other": "Available to teach {count} of {total}"
         }
       }
+    },
+    "public": {
+      "title": "Profile",
+      "competenciesTitle": "Competencies",
+      "willingToTeachBadge": "Willing to teach",
+      "notFound": "This profile doesn't exist.",
+      "messageButton": {
+        "cta": "Send message",
+        "disabledNoCompetencies": "This person hasn't marked any competency as willing to teach yet."
+      },
+      "pickCompetencyPrompt": "Which competency is this about?"
+    }
+  },
+  "people": {
+    "search": {
+      "title": "Find people to learn from",
+      "competencyLabel": "Competency",
+      "competencyPlaceholder": "Choose a competency…",
+      "emptyNoSelection": "Choose a competency to see who's willing to teach it.",
+      "emptyNoResults": "No one is willing to teach this competency yet.",
+      "resultsCount": {
+        "one": "{count} person found",
+        "other": "{count} people found"
+      },
+      "willingToTeachBadge": "Willing to teach",
+      "viewProfile": "View profile"
+    }
+  },
+  "chat": {
+    "dm": {
+      "listTitle": "Messages",
+      "emptyList": "No conversations yet.",
+      "threadHeading": "Chat with {name} — {competency}",
+      "messagePlaceholder": "Write a message…",
+      "send": "Send",
+      "sending": "Sending…",
+      "emptyThread": "No messages yet — say hello!"
+    },
+    "competency": {
+      "title": "{competency} chat",
+      "messagePlaceholder": "Write a message…",
+      "send": "Send",
+      "sending": "Sending…",
+      "empty": "No messages yet — start the conversation!",
+      "openCta": "Open group chat"
+    }
+  },
+  "ws": {
+    "error": {
+      "unauthorized": "Your session has expired — please refresh the page.",
+      "subscribeForbidden": "You don't have access to this conversation.",
+      "badRequest": "Something went wrong with that request."
+    },
+    "status": {
+      "reconnecting": "Reconnecting…"
     }
   },
   "competency": {
@@ -492,6 +549,22 @@
     "comment": {
       "bodyRequired": "Enter a comment.",
       "bodyTooLong": "Comment must be 2000 characters or fewer."
+    },
+    "user": {
+      "notFound": "User not found."
+    },
+    "dmThread": {
+      "cannotMessageSelf": "You can't message yourself.",
+      "competencyNotOffered": "This person hasn't marked that competency as willing to teach.",
+      "invalidPayload": "Something about this request is invalid.",
+      "forbidden": "You don't have access to this conversation.",
+      "messageBodyRequired": "Enter a message.",
+      "messageBodyTooLong": "Message must be 2000 characters or fewer."
+    },
+    "competencyChat": {
+      "messageBodyRequired": "Enter a message.",
+      "messageBodyTooLong": "Message must be 2000 characters or fewer.",
+      "notFound": "This competency chat is not available."
     },
     "generic": "Something went wrong. Please try again."
   },

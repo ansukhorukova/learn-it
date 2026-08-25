@@ -8,6 +8,7 @@ const boardsRouter = require('./routes/boards.route');
 const tasksRouter = require('./routes/tasks.route');
 const competenciesRouter = require('./routes/competencies.route');
 const languagesRouter = require('./routes/languages.route');
+const dmThreadsRouter = require('./routes/dmThreads.route');
 
 const app = express();
 
@@ -57,5 +58,13 @@ app.use('/api/v1/competencies', competenciesRouter);
 // The languages dictionary (US-023) — same top-level-resource reasoning as
 // competenciesRouter above: a shared catalog, not per-user data.
 app.use('/api/v1/languages', languagesRouter);
+
+// DM threads (US-027) — a top-level resource, not nested under /users:
+// a thread belongs to a PAIR of users plus a competency, not to either
+// user individually, so there's no single natural parent to nest it under.
+// The competency group chat (US-028) is nested under /competencies/:id/chat
+// instead (see competencies.route.js) since a chat room there genuinely
+// does have one natural parent — the competency itself.
+app.use('/api/v1/dm-threads', dmThreadsRouter);
 
 module.exports = app;

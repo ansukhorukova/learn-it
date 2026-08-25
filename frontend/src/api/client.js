@@ -304,3 +304,50 @@ export function updateUserCompetency(idToken, id, { willingToTeach }) {
 export function removeUserCompetency(idToken, id) {
   return request(`/users/me/competencies/${id}`, { method: 'DELETE', idToken });
 }
+
+// --- People search & public profiles (US-025/US-026) ---
+
+// GET /users/search — deliberately never called with an empty/undefined
+// competencyId (US-025 AC2: no request until a competency is chosen) — that
+// guard lives in PeopleSearchPage.jsx, not here, since this wrapper mirrors
+// the REST call 1:1.
+export function searchUsersByCompetency(idToken, competencyId) {
+  return request(`/users/search?competencyId=${encodeURIComponent(competencyId)}`, { idToken });
+}
+
+export function getPublicUserProfile(idToken, userId) {
+  return request(`/users/${encodeURIComponent(userId)}`, { idToken });
+}
+
+// --- DM threads (US-027) ---
+
+// POST /dm-threads — get-or-create (200 for an existing thread, 201 for a
+// new one; identical JSON shape either way, see DmThread schema).
+export function getOrCreateDmThread(idToken, { targetUserId, competencyId }) {
+  return request('/dm-threads', { method: 'POST', idToken, body: { targetUserId, competencyId } });
+}
+
+export function listMyDmThreads(idToken) {
+  return request('/dm-threads', { idToken });
+}
+
+export function listDmThreadMessages(idToken, threadId) {
+  return request(`/dm-threads/${threadId}/messages`, { idToken });
+}
+
+export function createDmThreadMessage(idToken, threadId, { body }) {
+  return request(`/dm-threads/${threadId}/messages`, { method: 'POST', idToken, body: { body } });
+}
+
+// --- Competency group chat (US-028) ---
+// One room per `competencies` row, identified directly by competencyId — no
+// separate "rooms" resource (decision #3 in USER_STORIES.md's US-025…029
+// origin notes).
+
+export function listCompetencyChatMessages(idToken, competencyId) {
+  return request(`/competencies/${competencyId}/chat/messages`, { idToken });
+}
+
+export function createCompetencyChatMessage(idToken, competencyId, { body }) {
+  return request(`/competencies/${competencyId}/chat/messages`, { method: 'POST', idToken, body: { body } });
+}

@@ -22,7 +22,8 @@
     "firebase-admin": "^12.7.0",
     "knex": "^3.1.0",
     "multer": "^2.0.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.4",

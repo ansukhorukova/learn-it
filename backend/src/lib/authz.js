@@ -199,6 +199,48 @@ async function requireTaskRole(taskId, userId, minRole, opts = {}) {
   return { task, role, hasBoardAccess };
 }
 
+// DM thread access gate (US-027 AC5, US-029 AC4). DM privacy is absolute —
+// unlike every board/task role above, there is no owner/admin exception
+// anywhere in this project for someone else's private messages, and no
+// "role" gradient either: you're either one of the exactly two participants
+// or you have zero access. Deliberately collapses "thread doesn't exist"
+// and "thread exists but I'm not a participant" into the SAME 403
+// `errors.dmThread.forbidden`, rather than the 404-vs-403 split used by
+// getOwnedBoard/requireTaskOwner above — revealing a distinct 404 for
+// someone else's real thread id would itself leak that the id names an
+// actual conversation between two other people. This mirrors the WS-level
+// anti-enumeration requirement (US-029 AC4: "без розкриття існування чи
+// вмісту треду"), applied identically on the REST path so the two channels
+// never disagree about what a given thread id reveals.
+//
+// Used by both dmThreads.service.js (REST GET/POST .../messages) and
+// ws/server.js (the `subscribe` frame's authorization check) — the exact
+// "same servicelayer" reuse US-029 AC4 calls for between the REST and WS
+// paths.
+async function requireDmThreadAccess(threadId, userId, { trx } = {}) {
+  if (!isUuid(threadId)) throw new ForbiddenError('errors.dmThread.forbidden');
+  const thread = await (trx || db)('dm_threads').where({ id: threadId }).first();
+  if (!thread || (thread.user_a_id !== userId && thread.user_b_id !== userId)) {
+    throw new ForbiddenError('errors.dmThread.forbidden');
+  }
+  return thread;
+}
+
+// Competency chat room existence/availability gate (US-028 AC5, US-029
+// AC4's "кімната компетенції — будь-хто автентифікований" branch). Unlike
+// requireDmThreadAccess above, this isn't really an authorization check —
+// decision #4 in this pass's "походження" section is "any authenticated
+// user, no membership concept at all" — it's the same "does this room even
+// exist and is it still open" existence gate the REST GET/POST endpoints
+// need, reused verbatim by ws/server.js's `subscribe` handler so a WS
+// client can't subscribe to a room REST would 404 on.
+async function requireActiveCompetencyRoom(competencyId, { trx } = {}) {
+  if (!isUuid(competencyId)) throw new NotFoundError('errors.competencyChat.notFound');
+  const competency = await (trx || db)('competencies').where({ id: competencyId }).first();
+  if (!competency || !competency.is_active) throw new NotFoundError('errors.competencyChat.notFound');
+  return competency;
+}
+
 module.exports = {
   ROLE_RANK,
   rankOf,
@@ -209,4 +251,6 @@ module.exports = {
   requireBoardRole,
   getTaskRole,
   requireTaskRole,
+  requireDmThreadAccess,
+  requireActiveCompetencyRoom,
 };

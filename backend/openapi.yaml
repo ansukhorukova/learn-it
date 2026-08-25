@@ -282,6 +282,94 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/search:
+    get:
+      summary: Find public profiles willing to teach a competency
+      description: >
+        US-025 AC1/AC4. Every `users` row with a `user_competencies` row for
+        `competencyId` that has `willing_to_teach = true` — literally "ready
+        to teach it", not merely "has it listed" (AC1). Each result also
+        carries that user's FULL list of `willing_to_teach = true`
+        competencies, not just the one searched for (AC4 — useful context).
+        Never exposes email, boards, or time data (AC4). No pagination in
+        MVP.
+
+
+        A missing or malformed `competencyId` resolves to an empty result
+        list rather than a 400 — the FE is expected not to call this without
+        a selection (AC2), but there's no AC-defined error path for a
+        malformed one either, and "empty" is indistinguishable in effect
+        from AC3's "no matches" empty state.
+      operationId: searchUsersByCompetency
+      tags: [users]
+      security:
+        - firebaseIdToken: []
+      parameters:
+        - name: competencyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Matching public profiles (possibly empty)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicUserSearchResult'
+                required: [users]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Firebase UID (not a UUID — `users.id` is the raw Firebase UID)
+        schema:
+          type: string
+    get:
+      summary: View another user's public profile
+      description: >
+        US-026 AC1/AC2. Available for ANY valid `userId`, including the
+        caller's own — deliberately NOT gated by shared board/task
+        membership (AC1's "доступний для БУДЬ-ЯКОГО валідного userId"), the
+        one intentionally wide-open cross-user read in this API. Returns the
+        FULL competency list (unlike `/users/search`, which only returns
+        willing-to-teach ones) with a per-entry `willingToTeach` flag so the
+        FE can render the "Готовий(а) викладати" badge. Never exposes email
+        or any other private field.
+      operationId: getPublicUserProfile
+      tags: [users]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The public profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No user with this id (`errors.user.notFound`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /competencies:
     get:
       summary: The active competencies dictionary
@@ -309,6 +397,104 @@ paths:
                 required: [competencies]
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /competencies/{id}/chat/messages:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: A competency's group chat history
+      description: >
+        US-028 AC2. There is no separate "rooms" resource — a room IS a
+        `competencies` row, identified directly by `id`. Any authenticated
+        user can read regardless of whether this competency is in their own
+        profile or `willing_to_teach` (decision #4 in this project's
+        US-025…029 origin notes — no membership concept at all here, unlike
+        every other resource in this API). Chronological, oldest first, no
+        pagination in MVP. A retired (`is_active = false`) or nonexistent
+        competency 404s — deactivation closes the product path but never
+        deletes the room's history (AC5).
+      operationId: listCompetencyChatMessages
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The room's messages, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CompetencyChatMessage'
+                required: [messages]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such competency, or it has been retired (`errors.competencyChat.notFound`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Post a message to a competency's group chat
+      description: >
+        US-028 AC3/AC4. Same "any authenticated user, no membership check"
+        access as GET above. On success, a `competencyChat.message.created`
+        WS event (see the "WebSocket channel" section near the end of this
+        document) is pushed to every live connection currently subscribed to
+        this room — REST remains the source of truth regardless of whether
+        any such connection exists.
+      operationId: createCompetencyChatMessage
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+              required: [body]
+      responses:
+        '201':
+          description: The newly created message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetencyChatMessage'
+        '400':
+          description: >
+            Empty/whitespace-only body (`errors.competencyChat.messageBodyRequired`)
+            or body over 2000 characters (`errors.competencyChat.messageBodyTooLong`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such competency, or it has been retired (`errors.competencyChat.notFound`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -2086,6 +2272,203 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /dm-threads:
+    post:
+      summary: Get-or-create a DM thread with another user about one competency
+      description: >
+        US-027 AC1-3. A top-level resource, not nested under `/users` — a
+        thread belongs to a PAIR of users plus a competency, with no single
+        natural parent to nest it under (the group chat under
+        `/competencies/{id}/chat` does have one, hence the different
+        nesting there).
+
+
+        Idempotent get-or-create: the SAME (caller, `targetUserId`,
+        `competencyId`) always resolves to the SAME thread — uniqueness is
+        enforced at the DB level on the normalized pair, so this is safe
+        under concurrent calls (AC1). Returns `200` if the thread already
+        existed, `201` if this call just created it — same JSON shape
+        either way.
+
+
+        `competencyId` must be one `targetUserId` has marked
+        `willing_to_teach = true` for (determined by US-026 AC3-5's profile
+        flow) — re-validated server-side on every call, including a direct
+        API call that tries to bypass that UI selection (AC3).
+      operationId: getOrCreateDmThread
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetUserId:
+                  type: string
+                  description: Firebase UID of the person to message
+                competencyId:
+                  type: string
+                  format: uuid
+              required: [targetUserId, competencyId]
+      responses:
+        '200':
+          description: The existing thread for this pair+competency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DmThread'
+        '201':
+          description: A newly created thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DmThread'
+        '400':
+          description: >
+            `targetUserId` equal to the caller (`errors.dmThread.cannotMessageSelf`),
+            or `competencyId` not marked `willing_to_teach = true` by
+            `targetUserId` — including a nonexistent/malformed id, which is
+            indistinguishable from "not offered" (`errors.dmThread.competencyNotOffered`),
+            or a missing/malformed `targetUserId` (`errors.dmThread.invalidPayload`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      summary: List my DM threads
+      description: >
+        US-027 AC11/AC12. Every thread the caller participates in, sorted by
+        last activity (most recent message, or the thread's own
+        `createdAt` if it has no messages yet, AC12) descending. No
+        pagination in MVP.
+      operationId: listMyDmThreads
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The caller's threads, most recently active first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DmThread'
+                required: [threads]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /dm-threads/{id}/messages:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: A DM thread's message history
+      description: >
+        US-027 AC4/AC5. Participants only — DM privacy is absolute, there is
+        no owner/admin exception anywhere in this project for someone else's
+        private messages. A nonexistent thread id and "thread exists but I'm
+        not a participant" are BOTH `403 errors.dmThread.forbidden` — never a
+        distinct 404 — so a thread id alone never reveals whether it names a
+        real conversation between two other people (same anti-enumeration
+        principle the WS `subscribe` frame's authorization check applies,
+        see the "WebSocket channel" section near the end of this document).
+        Chronological, oldest first, no pagination in MVP.
+      operationId: listDmThreadMessages
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The thread's messages, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DmMessage'
+                required: [messages]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Not a participant of this thread, or the thread doesn't exist (`errors.dmThread.forbidden`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Send a message in a DM thread
+      description: >
+        US-027 AC5-8. Same participants-only gate as GET above. On success,
+        a `dm.message.created` WS event (see the "WebSocket channel" section
+        near the end of this document) is pushed to the other participant's
+        live connection(s), if any, AND to any connection subscribed to this
+        specific thread's channel — REST remains the source of truth
+        regardless of whether any such connection exists (AC8: a missing/
+        dropped WS connection never loses the message).
+      operationId: createDmThreadMessage
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+              required: [body]
+      responses:
+        '201':
+          description: The newly created message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DmMessage'
+        '400':
+          description: >
+            Empty/whitespace-only body (`errors.dmThread.messageBodyRequired`)
+            or body over 2000 characters (`errors.dmThread.messageBodyTooLong`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Not a participant of this thread, or the thread doesn't exist (`errors.dmThread.forbidden`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   responses:
     Unauthorized:
@@ -2759,6 +3142,168 @@ components:
           enum: [viewer, collaborator]
       required: [role]
 
+    PublicUserCompetency:
+      type: object
+      description: >
+        One entry in a public profile's competency list (US-025/US-026) —
+        deliberately a narrower shape than the caller's-own-profile
+        `UserCompetency` schema: no `id`/`userId`/timestamps, since those
+        have no meaning to a viewer who isn't the owner.
+      properties:
+        competencyId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'Null for a custom (`isCustom: true`) entry.'
+        competencySlug:
+          type: string
+          nullable: true
+          description: Locale key suffix (`competency.<slug>`); null for a custom entry.
+        isCustom:
+          type: boolean
+        customLabel:
+          type: string
+          nullable: true
+        willingToTeach:
+          type: boolean
+      required: [competencyId, competencySlug, isCustom, customLabel, willingToTeach]
+
+    PublicUserSearchResult:
+      type: object
+      description: >
+        One result row from `GET /users/search` (US-025 AC4). Only carries
+        the `willing_to_teach = true` competencies (every entry here has
+        `willingToTeach: true`) — contrast with `PublicUserProfile` below,
+        which carries the FULL list. Never email/boards/time.
+      properties:
+        id:
+          type: string
+          description: Firebase UID
+        name:
+          type: string
+          description: publicName if set, else displayName (AUTH-004 AC5/AC6 pattern).
+        competencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicUserCompetency'
+      required: [id, name, competencies]
+
+    PublicUserProfile:
+      type: object
+      description: >
+        `GET /users/{id}` (US-026 AC1). The FULL `user_competencies` list
+        (not just willing-to-teach ones, unlike PublicUserSearchResult) —
+        each entry's own `willingToTeach` flag is what the FE renders the
+        badge from. Never email/boards/time.
+      properties:
+        id:
+          type: string
+          description: Firebase UID
+        name:
+          type: string
+          description: publicName if set, else displayName (AUTH-004 AC5/AC6 pattern).
+        competencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicUserCompetency'
+      required: [id, name, competencies]
+
+    DmThreadOtherUser:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Firebase UID of the OTHER participant (never the caller).
+        name:
+          type: string
+          nullable: true
+
+    DmThreadLastMessage:
+      type: object
+      nullable: true
+      description: Null for a freshly-created thread with no messages yet (US-027 AC12).
+      properties:
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    DmThread:
+      type: object
+      description: A `dm_threads` row, hydrated for display (US-027 AC1/AC11).
+      properties:
+        id:
+          type: string
+          format: uuid
+        competencyId:
+          type: string
+          format: uuid
+        competencySlug:
+          type: string
+          nullable: true
+        otherUser:
+          $ref: '#/components/schemas/DmThreadOtherUser'
+        lastMessage:
+          $ref: '#/components/schemas/DmThreadLastMessage'
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, competencyId, competencySlug, otherUser, lastMessage, createdAt]
+
+    DmMessage:
+      type: object
+      description: >
+        A `dm_messages` row (US-027). View + add only — no `updatedAt`
+        (same MVP scope decision as `TaskComment`/`CompetencyChatMessage`).
+      properties:
+        id:
+          type: string
+          format: uuid
+        threadId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          description: Firebase UID of the sender.
+        senderName:
+          type: string
+          description: AUTH-004 AC5/AC6 publicName-falls-back-to-displayName pattern.
+        body:
+          type: string
+          maxLength: 2000
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, threadId, senderId, senderName, body, createdAt]
+
+    CompetencyChatMessage:
+      type: object
+      description: >
+        A `competency_chat_messages` row (US-028) — the shared room
+        identified by `competencyId` (no separate "rooms" resource). View +
+        add only, same MVP scope as `DmMessage`/`TaskComment`.
+      properties:
+        id:
+          type: string
+          format: uuid
+        competencyId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          description: Firebase UID of the sender.
+        senderName:
+          type: string
+          description: AUTH-004 AC5/AC6 publicName-falls-back-to-displayName pattern.
+        body:
+          type: string
+          maxLength: 2000
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, competencyId, senderId, senderName, body, createdAt]
+
     ApiError:
       type: object
       properties:
@@ -2780,3 +3325,119 @@ components:
 
 security:
   - firebaseIdToken: []
+
+# ---------------------------------------------------------------------------
+# WebSocket channel (US-029) — documented here as plain text, NOT as an
+# OpenAPI `paths` entry, since OpenAPI 3.0 has no syntax for a WS
+# upgrade/frame protocol. This is the one deliberate, explicitly-documented
+# departure from "every endpoint is a REST path in this file" (CLAUDE.md
+# "Архітектура": the FE ↔ BE contract was pure REST before US-029).
+#
+# Placement decision (US-029 AC6/AC7): the WS server is attached to the
+# SAME http.Server/port (4000) the Express app already listens on — see
+# backend/src/ws/server.js's header comment for the full rationale and
+# trade-offs. `docker-compose.yml` is therefore UNCHANGED by this pass;
+# there is no new service to add.
+#
+# Endpoint:      ws(s)://<same host:port as the REST API>/ws?token=<Firebase ID token>
+#
+# Authentication (US-029 AC2/AC3): the SAME Firebase ID token used for
+# `Authorization: Bearer` on REST calls, passed as the `token` query
+# parameter (the browser's native WebSocket API can't set custom headers on
+# the upgrade request). Verified via the same Firebase Admin SDK
+# `verifyIdToken()` the REST `requireAuth` middleware uses — not a separate
+# auth mechanism. A missing or invalid/expired token gets a structured
+# `error` frame (`ws.error.unauthorized`) followed immediately by the
+# server closing the connection with close code 4401 — no subscription or
+# message is ever accepted first.
+#
+# Delivery guarantee (US-027 AC8/AC9, US-029 AC5/AC9): REST is unconditionally
+# the source of truth. Every message is written to Postgres by a REST POST
+# BEFORE any WS event is broadcast; a missing/dropped/never-subscribed WS
+# connection never loses a message — the full history is always available
+# via `GET /dm-threads/{id}/messages` / `GET /competencies/{id}/chat/messages`.
+# WS only accelerates "live" delivery to connections that happen to be
+# listening at that instant.
+#
+# --- Client -> Server frames ---
+#
+#   {"type": "subscribe", "channel": "dmThread", "threadId": "<uuid>"}
+#     Authorized via the SAME service-layer check
+#     (`requireDmThreadAccess`) `GET /dm-threads/{id}/messages` uses — only
+#     the thread's two participants can subscribe. A non-participant OR a
+#     nonexistent thread id get the identical denial (anti-enumeration,
+#     same as the REST 403 — see that path's description).
+#
+#   {"type": "subscribe", "channel": "competencyChat", "competencyId": "<uuid>"}
+#     Authorized via `requireActiveCompetencyRoom` — the same existence/
+#     active check `GET /competencies/{id}/chat/messages` uses. Any
+#     authenticated user may subscribe to any active room; a nonexistent or
+#     retired (`is_active=false`) competency is denied.
+#
+#   {"type": "unsubscribe", "channel": "dmThread" | "competencyChat", "threadId"|"competencyId": "<uuid>"}
+#     Mirrors subscribe; no authorization check needed to leave a channel.
+#
+# --- Server -> Client frames ---
+#
+#   {"type": "ready"}
+#     Sent once, right after successful token verification — the signal
+#     that subscribe/message frames may now be sent.
+#
+#   {"type": "subscribed", "channel": "dmThread"|"competencyChat", "threadId"|"competencyId": "<uuid>"}
+#     Acknowledges a successful subscribe.
+#
+#   {"type": "error", "code": "UNAUTHORIZED", "messageKey": "ws.error.unauthorized"}
+#     Connection-level auth failure (US-029 AC3) — always followed by the
+#     server closing the connection (code 4401).
+#
+#   {"type": "error", "code": "FORBIDDEN", "messageKey": "ws.error.subscribeForbidden"}
+#     A `subscribe` to a `dmThread` the caller isn't a participant of (or
+#     that doesn't exist) was denied. Connection stays open.
+#
+#   {"type": "error", "code": "NOT_FOUND", "messageKey": "errors.competencyChat.notFound"}
+#     A `subscribe` to a `competencyChat` room that's nonexistent or
+#     retired was denied. Connection stays open. (Reuses the exact same
+#     messageKey the REST 404 for this room uses — same content, no reason
+#     for a separate WS-prefixed key here.)
+#
+#   {"type": "error", "code": "BAD_REQUEST", "messageKey": "ws.error.badRequest"}
+#     A frame that isn't valid JSON, or has no recognized `type` — a
+#     defensive addition beyond the BA-specified error keys, for a
+#     malformed client frame that has no other natural error code.
+#
+#   {"type": "dm.message.created", "threadId": "<uuid>", "message": <DmMessage>}
+#     Pushed to (a) any connection subscribed to this specific `dmThread`
+#     channel (an open conversation screen, US-027 AC9) AND (b) EVERY live
+#     connection belonging to either participant, regardless of whether
+#     they've subscribed to this exact thread — this is "my own inbox"
+#     delivery, always allowed since it's the caller's own data, and it's
+#     what lets the my-threads list bump a thread to the top even when that
+#     thread's screen isn't open (US-027 AC10).
+#
+#   {"type": "competencyChat.message.created", "competencyId": "<uuid>", "message": <CompetencyChatMessage>}
+#     Pushed only to connections subscribed to that specific `competencyChat`
+#     channel — a group room has no personal-inbox equivalent.
+#
+# `<DmMessage>`/`<CompetencyChatMessage>` above are the exact same JSON
+# shapes as the `DmMessage`/`CompetencyChatMessage` schemas defined under
+# `components.schemas` for the REST endpoints — the WS push is the identical
+# object the matching POST endpoint just returned, not a separate shape.
+#
+# What FE needs to know to wire this up (frontend-developer, US-027/US-028):
+#   - Connect once per session: `new WebSocket(`${WS_BASE_URL}/ws?token=${idToken}`)`.
+#   - Wait for `{"type":"ready"}` before sending any `subscribe` frame.
+#   - Re-send `subscribe` frames after any reconnect — subscriptions are
+#     NOT remembered across a dropped connection.
+#   - No `subscribe` is needed just to get my-threads-list bumps (US-027
+#     AC10) — those arrive automatically to every authenticated connection
+#     for that user. `subscribe` to `dmThread` is only needed to receive
+#     live message pushes while a specific thread's screen is open.
+#   - On any `error` frame, look up `messageKey` in the FE's own locale
+#     dictionary (same convention as every REST error) — never render the
+#     frame's `code` or a raw message to the user.
+#   - Token refresh mid-connection is NOT handled by this pass — a token
+#     that expires while a connection is open is not proactively
+#     re-verified; reconnect (which the FE already needs for network drops,
+#     `ws.status.reconnecting`) with a fresh token is the only refresh path
+#     for now.
+# ---------------------------------------------------------------------------
