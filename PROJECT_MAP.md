@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-25 — категорія/публічна видимість/мови борду + реструктуризація Boards overview (US-021…US-024, нові вузли `BE_Languages`/`DB_Languages`/`DB_BoardLanguages`, розширення `FE_Boards`/`FE_BoardView`/`BE_Boards`/`DB_Boards`).
+Останнє оновлення: 2026-08-25 — месенджинг: пошук профілів, чужий профіль, DM-чат, груповий чат компетенції, WebSocket-інфраструктура (US-025…US-029), новий Рядок 4 з вузлами `FE_PeopleSearch`/`FE_UserProfile`/`FE_Chat`/`BE_UserSearch`/`BE_DmThreads`/`BE_CompetencyChat`/`BE_Websocket`/`Infra_WebSocket`/`DB_DmThreads`/`DB_DmMessages`/`DB_CompetencyChatMessages`.
 
 ## Легенда
 
@@ -10,7 +10,7 @@
 | 🟨 | `progress` | частково реалізовано (напр. UI без ендпоінта, або ендпоінт без UI) |
 | ⬜ | `planned` | ще не почато, лише зафіксовано в специфікації як цільовий обсяг |
 
-Карта розбита на три рядки за функціональними групами (Auth/Infra/Settings; Boards/Sharing; Task panel/Attachments/Team view) — у кожному рядку всі зв'язки замикаються всередині нього, тому стрілки між рядками не перетинаються.
+Карта розбита на чотири рядки за функціональними групами (Auth/Infra/Settings; Boards/Sharing; Task panel/Attachments/Team view; Месенджинг: пошук профілів/DM/груповий чат компетенції/WebSocket) — у кожному рядку всі зв'язки замикаються всередині нього, тому стрілки між рядками не перетинаються.
 
 ## Рядок 1 — Auth, i18n, Infra
 
@@ -171,6 +171,57 @@ graph TD
   class BE_TeamView,FE_TeamView planned;
 ```
 
+## Рядок 4 — Месенджинг (пошук профілів, DM-чат, груповий чат компетенції, WebSocket)
+
+```mermaid
+graph TD
+  classDef done fill:#2e7d32,color:#ffffff,stroke:#1b5e20,stroke-width:2px;
+  classDef progress fill:#f9a825,color:#1a1a1a,stroke:#f57f17,stroke-width:2px;
+  classDef planned fill:#37474f,color:#cfd8dc,stroke:#263238,stroke-width:1px,stroke-dasharray: 3 3;
+
+  subgraph FE["Frontend"]
+    FE_PeopleSearch["🟩 FE_PeopleSearch<br/>/people: пошук за<br/>компетенцією, willing_to_teach"]
+    FE_UserProfile["🟩 FE_UserProfile<br/>/users/:id: чужий профіль,<br/>кнопка Написати повідомлення"]
+    FE_Chat["🟩 FE_Chat<br/>/messages, /messages/:threadId,<br/>/competencies/:id/chat"]
+  end
+
+  subgraph BE["Backend (Node.js REST /api/v1 + WS)"]
+    BE_UserSearch["🟩 BE_UserSearch<br/>GET /users/search,<br/>GET /users/:id"]
+    BE_DmThreads["🟩 BE_DmThreads<br/>POST+GET /dm-threads,<br/>GET+POST /dm-threads/:id/messages"]
+    BE_CompetencyChat["🟩 BE_CompetencyChat<br/>GET+POST<br/>/competencies/:id/chat/messages"]
+    BE_Websocket["🟩 BE_Websocket<br/>WS auth (Firebase token),<br/>subscribe authz, broadcast"]
+  end
+
+  subgraph DB["PostgreSQL"]
+    DB_Users["🟩 DB_Users<br/>(users, див. Рядок 1)"]
+    DB_DmThreads["🟩 DB_DmThreads<br/>dm_threads (user_a_id,<br/>user_b_id, competency_id,<br/>unique пара+компетенція)"]
+    DB_DmMessages["🟩 DB_DmMessages<br/>dm_messages"]
+    DB_CompetencyChatMessages["🟩 DB_CompetencyChatMessages<br/>competency_chat_messages"]
+  end
+
+  subgraph Infra["Infra"]
+    Infra_WebSocket["🟩 Infra_WebSocket<br/>WS у тому ж backend-<br/>процесі, порт 4000,<br/>без нового docker-сервісу"]
+  end
+
+  FE_PeopleSearch --> BE_UserSearch
+  FE_PeopleSearch --> FE_UserProfile
+  FE_UserProfile --> BE_UserSearch
+  FE_UserProfile --> BE_DmThreads
+  FE_Chat --> BE_DmThreads
+  FE_Chat --> BE_CompetencyChat
+  FE_Chat --> BE_Websocket
+
+  BE_UserSearch --> DB_Users
+  BE_DmThreads --> DB_DmThreads
+  BE_DmThreads --> DB_DmMessages
+  BE_DmThreads --> BE_Websocket
+  BE_CompetencyChat --> DB_CompetencyChatMessages
+  BE_CompetencyChat --> BE_Websocket
+  BE_Websocket --> Infra_WebSocket
+
+  class FE_PeopleSearch,FE_UserProfile,FE_Chat,BE_UserSearch,BE_DmThreads,BE_CompetencyChat,BE_Websocket,DB_Users,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,Infra_WebSocket done;
+```
+
 ## Схема БД (таблиці горизонтально, FK-звʼязки вертикально)
 
 ```mermaid
@@ -185,12 +236,15 @@ graph TD
   DB_UserCompetencies["🟩 user_competencies<br/>user_id, competency_id,<br/>is_custom, willing_to_teach"]
   DB_TaskComments["🟩 task_comments<br/>task_id, author_id,<br/>body, created_at"]
   DB_BoardLanguages["🟩 board_languages<br/>board_id, language_id"]
+  DB_DmMessages["🟩 dm_messages<br/>thread_id, sender_id,<br/>body, created_at"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>public_name, locale,<br/>last_sign_in_provider"]
   DB_Attachments["🟩 attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
   DB_TimeEntries["🟩 time_entries<br/>task_id, user_id,<br/>started_at, ended_at"]
   DB_Competencies["🟩 competencies<br/>slug, is_active"]
   DB_Languages["🟩 languages<br/>slug, is_active"]
+  DB_DmThreads["🟩 dm_threads<br/>user_a_id, user_b_id,<br/>competency_id,<br/>unique пара+компетенція"]
+  DB_CompetencyChatMessages["🟩 competency_chat_messages<br/>competency_id, sender_id,<br/>body, created_at"]
 
   DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position,<br/>planned_minutes"]
 
@@ -213,8 +267,14 @@ graph TD
   DB_Attachments -->|FK| DB_Tasks
   DB_Tasks -->|FK| DB_Boards
   DB_Boards -.FK, nullable.-> DB_Competencies
+  DB_DmThreads -->|FK x2| DB_Users
+  DB_DmThreads -->|FK| DB_Competencies
+  DB_DmMessages -->|FK| DB_DmThreads
+  DB_DmMessages -->|FK| DB_Users
+  DB_CompetencyChatMessages -->|FK| DB_Competencies
+  DB_CompetencyChatMessages -->|FK| DB_Users
 
-  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages done;
+  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages done;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
@@ -240,3 +300,10 @@ graph TD
 - З фічі "Bug fix: розгортання нотатки" (2026-08-25, US-018): виправлення всередині вже done-вузла `FE_Attachments` — статус на карті не змінюється, нового вузла не заведено. Чіп вкладення-нотатки (`attachment.kind=note`) тепер розгортається/згортається інлайн по кліку на контрол "Показати більше"/"Показати менше" (`aria-expanded`, keyboard-підтримка Tab+Enter/Space) замість обрізання тексту без будь-якого способу прочитати його повністю. Presentation-only фікс: `body` нотатки вже повністю зберігався в БД і повертався `GET`-ендпоінтом вкладень з моменту US-009 — обрізання відбувалось лише в рендері FE, тому BE й схема тут узагалі не чіпались, жодного нового мережевого запиту розгортання не робить. Поведінка ідентична для всіх значень `visibility` (`private`/`shared`/`selected`) — фікс не зачіпає гейт видимості вкладень (той самий існуючий контроль доступу з US-009/US-016). Tester: PASS through кодове рев'ю (живий браузерний клік не перевірено — заблоковано sandbox-класифікатором середовища при спробі тестової автентифікації, не баг коду; зафіксовано тут для прозорості, той самий клас обмеження, що й для US-019/US-020 нижче).
 - З фічі "Коментарі до таски (US-019) та оцінений час (US-020)" (2026-08-25, коміт `85ae7e5`): свідома зміна scope, узгоджена до реалізації (той самий прецедент, що AUTH-003/AUTH-004…008/AUTH-008) — пункт "коментарі/обговорення" прибрано з розділу CLAUDE.md "Поза межами цього етапу". Нові `done`-вузли в Рядку 3: `BE_TaskComments` (`GET`+`POST /tasks/:id/comments`, авторизація читання — той самий `can_view_task`, що вже використовується для attachments/time-entries; авторизація запису — owner/collaborator, viewer отримує 403 `errors.task.readOnlyAccess`, реюз ключа з US-016) і `DB_TaskComments` (таблиця `task_comments`: `task_id` FK `ON DELETE CASCADE` на `tasks`, `author_id` FK на `users`, `body`, `created_at`, складений індекс на `(task_id, created_at)` під сортування списку) — обидва зʼєднані `FE_TaskPanel --> BE_TaskComments --> DB_TaskComments`, поруч із гілкою `BE_Attachments`/`DB_Attachments`, за тим самим структурним принципом. Ключове продуктове рішення: коментарі спільні для всіх з доступом до таски/борду (як статус таски), MVP без edit/delete. `planned_minutes` (US-020) — нова колонка `tasks.planned_minutes` (nullable int, скид у NULL при 0/порожніх полях) і розширення `PATCH /tasks/:id` полем `plannedMinutes` — це розширення вже done-вузлів `BE_Tasks`/`DB_Tasks`, за тим самим принципом, що й попередні розширення контракту (тотали, myRole, шеринг, опис): окремого вузла не заведено, лише позначка нової колонки в лейблі `DB_Tasks` на діаграмі схеми БД. `GET /tasks/:id` і `GET /boards/:id/tasks` розширені тим самим полем `plannedMinutes` поруч з уже наявним `totalSeconds` — той самий гейт `errors.task.readOnlyAccess`/`errors.task.forbidden`, що вже діє для інших полів таски. Code review: Approve with comments, два non-blocker зауваження — застаріле локальне state форми при перемиканні таски без remount панелі (пре-існуючий патерн з `FE_TaskPanel`, тепер поширений і на нові поля коментарів/оцінки часу, не новий борг) і непов'язані transitive npm audit вразливості в ланцюжку залежностей `firebase-admin` (поза скоупом цієї фічі). Tester: PASS with notes — усі 24 AC перевірені кодовим рев'ю + повним BE test suite 55/55 (нові файли `backend/test/concurrency/taskComments.test.js` і `plannedMinutes.test.js`) + прямими API auth-перевірками; живий браузерний клік не перевірено — заблоковано sandbox-класифікатором середовища при спробі тестової автентифікації, не баг коду.
 - З фічі "Категорії, публічна видимість і мови борду + реструктуризація Boards overview" (2026-08-25, US-021…US-024, коміт `994310a`): нова, раніше відсутня в CLAUDE.md концепція — публічна (без запрошення) read-only видимість борда, третій рівень доступу поряд з `board_members`/`task_shares`. Реалізовано новою ефективною роллю `public` у `backend/src/lib/authz.js` (`ROLE_RANK.public = 1`, той самий ранг, що `viewer` — тому всі наявні `minRole: 'viewer'`-гейти читання пропускають публічного відвідувача безкоштовно, а всі `minRole: 'collaborator'`-гейти запису відхиляють його безкоштовно, без окремих `public`-гілок на кожному ендпоінті); реальне членство завжди переважає (`higherRole` явно тай-брейкає `public` проти будь-якої реальної ролі, US-022 AC7). Приватність `time_entries` і гейт `visibility` вкладень (`private`/`shared`/`selected`) лишаються повністю чинними й для публічного відвідувача — жодного винятку (US-022 AC4-5). Нові `done`-вузли в Рядку 2: `BE_Languages` (`GET /languages`, той самий контракт, що вже done `BE_Competencies`) і `DB_Languages`/`DB_BoardLanguages` (нова таблиця-довідник + junction, патерн `competencies`/`board_members` — на відміну від `category_id`/`visibility`, які лягли просто новими колонками на вже done `DB_Boards` без нових вузлів). Розширені без зміни статусу: `FE_Boards` (нова секція "Public Boards" з фільтрами категорія+мова, поряд із семантично незміненою "Мої дошки"), `FE_BoardView` (бейджі категорії/мов, банер `sharing.publicViewerBanner` для `myRole==='public'`), `BE_Boards` (`GET /boards/public`, поля `categoryId`/`visibility`/`languageIds` у CRUD). Owner-only гейт на всі три нові поля борда — не нове правило, застосування вже наявного гейту з US-003/US-015 до нових полів. **CLAUDE.md текстом ще НЕ оновлено цим проходом** — формулювання для розділів "Дані"/"Шеринг"/"Екрани" п.2 підготовлені бізнес-аналітиком у `USER_STORIES.md` (перед US-021), але за прямою вказівкою в запиті на цю серію stories сам CLAUDE.md не редагувався (на відміну від прецеденту AUTH-008/US-018…US-020, де CLAUDE.md оновлювався одразу тим самим проходом) — застосування цих правок узгоджується окремим кроком. Code review: Approve with comments, два non-blocker зауваження зафіксовані окремо в розділі "Відомі прогалини" вище (відсутній автотест на `task_shares`-override-`public` на task-рівні; дрімаючий N+1 у `attachments.service.js`). Tester: PASS with notes — 87/87 backend-тестів (новий файл `backend/test/concurrency/boardCategoryVisibilityLanguages.test.js`) + 20 AC звірено вручну через реальні HTTP-запити з Firebase test-users; один мінорний баг ("брудна" форма `languages` у відповіді `POST /boards`) знайдено й виправлено до code review.
+- З фічі "Месенджинг: пошук профілів, чужий профіль, DM-чат, груповий чат компетенції, WebSocket-інфраструктура" (2026-08-25, US-025…US-029, коміт `3b4163e`): **принципово нова функціональна область** — до цього проєкт мав лише трекінг часу борду/тасок, жодного месенджингу чи WebSocket не існувало; тому вперше заведено окремий **Рядок 4** замість розширення Рядків 1-3 (за аналогією з тим, як Рядки 2/3 колись виникли для Boards і Task panel відповідно). Нові `done`-вузли: `FE_PeopleSearch` (`/people`), `FE_UserProfile` (`/users/:id`), `FE_Chat` (об'єднує `/messages`, `/messages/:threadId`, `/competencies/:id/chat` — три екрани в одному вузлі, той самий рівень деталізації, що вже застосований до `FE_TaskPanel`/`FE_BoardView`, які теж покривають по кілька UI-станів одним вузлом); `BE_UserSearch` (`GET /users/search`, `GET /users/:id`), `BE_DmThreads` (`POST`+`GET /dm-threads`, `GET`+`POST /dm-threads/:id/messages`), `BE_CompetencyChat` (`GET`+`POST /competencies/:id/chat/messages` — фізично додано в наявний файл `competencies.route.js`, але окремий вузол, а не розширення `BE_Competencies` з Рядка 1, бо це нова доменна область (чат), не розширення довідника компетенцій), `BE_Websocket` (WS-сервер: автентифікація, авторизація підписок, broadcast); `DB_DmThreads`, `DB_DmMessages`, `DB_CompetencyChatMessages`; `Infra_WebSocket` (інфра-рівень позначка "WS у тому самому backend-процесі, без нового docker-сервісу" — той самий принцип вузла-капабіліті, що `Infra_MinIO`, але не дубльований у Рядок 1, бо специфічний саме для месенджингу). `DB_Users` **повторений** у Рядку 4 (зʼєднаний з `BE_UserSearch`) за тим самим принципом повтору вузла, що вже застосований до `Infra_MinIO`/`FE_SharePanel` — це один і той самий `users` з Рядка 1, показаний вдруге, бо пошук профілів реально читає з нього, а не тому, що це інша таблиця. Розширено без зміни статусу: `FE_AppHeader` (Рядок 1, вже `done`) — додано nav-посилання на `/people`/`/messages` і банер `ws.error.unauthorized` (реагує на WS-подію `error` з будь-якого екрана, не лише чат-сторінок); зв'язок з `FE_Chat`/`FE_PeopleSearch` не проведено стрілкою (міжрядкові стрілки навмисно не малюються), зафіксовано тут текстом, той самий підхід, що для AUTH-008.
+  - **Перше усвідомлене відхилення від чистого REST**: WebSocket-канал, задокументоване в CLAUDE.md (текст підготовлено бізнес-аналітиком у "походженні" перед US-025, застосування — окремий крок). REST лишається джерелом правди (`POST .../messages` завжди пише в БД першим), WS — лише прискорення "наживо"; відсутнє з'єднання адресата ніколи не губить повідомлення.
+  - **In-process WS-стан підписок** (`backend/src/ws/server.js`: `dmSubscribers`/`competencySubscribers`/`userSockets` — прості `Map`/`Set` у памʼяті процесу) — свідоме обмеження цього MVP-проходу, задокументоване коментарем у коді: працює, лише поки бекенд — один інстанс; майбутній multi-instance деплой (Cloud Run з кількома інстансами) вимагатиме спільного шару (Postgres LISTEN/NOTIFY, Redis pub/sub чи подібне). Не проблема для MVP на одному інстансі, не блокер.
+  - **Модель DM-треду "пара користувач+компетенція"**: унікальність на рівні БД через `unique constraint` на нормалізовану пару (менший_user_id, більший_user_id, competency_id) + `CHECK` — дублікат треду для тієї самої пари+компетенції неможливий навіть при паралельних запитах (concurrency-тест `backend/test/concurrency/dmThreads.test.js` — 15 паралельних `POST` → 1 тред).
+  - **Три non-blocker зауваження code-reviewer'а (Approve with comments)**: (1) банер `ws.error.unauthorized` у `AppHeader.jsx` не скидається автоматично на успішний реконект — лишається видимим, доки користувач сам не перезавантажить сторінку; (2) токен у query-параметрі WS URL (`?token=...`) — усвідомлений trade-off (нативний WebSocket API не підтримує кастомні заголовки при handshake), із приміткою про майбутній ризик потрапляння токена в access-логи Cloud Run перед реальним деплоєм (зараз — лише локальний Docker, ризик неактивний); (3) невелика непослідовність застосування `encodeURIComponent` у кількох методах `frontend/src/api/client.js` (є в нових `searchUsers`/`getUserProfile`, відсутня в частині вже наявних методів) — косметичне, не вплинуло на жоден реальний сценарій цього проходу.
+  - Tester: PASS with notes — 128/128 backend-тестів (нові файли `dmThreads.test.js`, `competencyChat.test.js`, `userSearchAndProfile.test.js`, `websocket.test.js`), реальний конкурентний тест 15 паралельних `POST /dm-threads` → 1 тред, anti-enumeration підтверджено і на REST (404/403), і на WS-рівні (відмова підписки без розкриття існування треду); повний браузерний прохід Playwright по всіх 5 нових екранів. Один баг знайдено й виправлено до code review: дублювання власного повідомлення в UI при відправці (race між WS-echo і оптимістичним рендером після `POST`) — виправлено в `DmThreadPage.jsx`/`CompetencyChatPage.jsx`.
+  - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий підхід, що прецедент US-021…024: формулювання для розділів "Архітектура"/"Екрани"/"Дані"/"Поза межами цього етапу" підготовлені бізнес-аналітиком у `USER_STORIES.md` (розділ "походження" перед US-025), застосування — окремий крок, коли попросять.

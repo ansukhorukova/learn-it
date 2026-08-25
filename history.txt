@@ -551,3 +551,73 @@ PROJECT_MAP.md — історія змін
     "✅ Готово (пройшло code review)", дата лишена 2026-08-25.
   Коміт: docs: update PROJECT_MAP.md — категорії, публічна видимість і
     мови борду + реструктуризація Boards overview (US-021…US-024)
+
+2026-08-25 — Месенджинг: пошук профілів, DM-чат, груповий чат
+компетенції, WebSocket-інфраструктура (US-025…US-029): done
+  Підсумок від fullstack-developer + code-reviewer (Approve with
+    comments, без блокерів, коміт 3b4163e). Принципово нова
+    функціональна область — до цього проєкт мав лише трекінг часу
+    борду/тасок, жодного месенджингу чи WebSocket не існувало.
+  Додано новий РЯДОК 4 — Месенджинг (замість розширення Рядків 1-3),
+    за аналогією з тим, як Рядки 2/3 колись виникли для Boards і
+    Task panel.
+  Додано нові вузли (усі 🟩 done):
+    FE_PeopleSearch — /people, пошук за компетенцією (willing_to_teach).
+    FE_UserProfile — /users/:id, чужий публічний профіль + кнопка
+      "Написати повідомлення" (4 гілки вибору competencyId).
+    FE_Chat — обʼєднує /messages, /messages/:threadId,
+      /competencies/:id/chat в один вузол (той самий рівень
+      деталізації, що вже застосований до FE_TaskPanel/FE_BoardView).
+    BE_UserSearch — GET /users/search, GET /users/:id.
+    BE_DmThreads — POST+GET /dm-threads, GET+POST
+      /dm-threads/:id/messages; get-or-create з унікальністю на рівні
+      БД, підтверджено конкурентним тестом (15 паралельних POST → 1
+      тред).
+    BE_CompetencyChat — GET+POST /competencies/:id/chat/messages;
+      окремий вузол, а не розширення BE_Competencies (Рядок 1) — нова
+      доменна область (чат), не розширення довідника.
+    BE_Websocket — WS-сервер: автентифікація Firebase ID token,
+      авторизація підписок тим самим сервісним шаром, що REST
+      (requireDmThreadAccess/requireActiveCompetencyRoom), broadcast.
+    DB_DmThreads, DB_DmMessages, DB_CompetencyChatMessages — нові
+      таблиці, додано в ER-схему БД (FK-стрілки вертикально).
+    Infra_WebSocket — інфра-капабіліті "WS у тому самому
+      backend-процесі, порт 4000, без нового docker-сервісу" —
+      docker-compose.yml без змін у складі сервісів.
+  Повторено (не новий вузол): DB_Users показаний і в Рядку 4
+    (з'єднаний з BE_UserSearch), той самий принцип повтору, що вже
+    застосований до Infra_MinIO/FE_SharePanel.
+  Розширено без зміни статусу: FE_AppHeader (Рядок 1, вже done) —
+    nav-посилання на /people, /messages + банер ws.error.unauthorized;
+    міжрядкові стрілки навмисно не проведені, зафіксовано текстом.
+  Три нетривіальні архітектурні рішення зафіксовані текстом у
+    Примітках PROJECT_MAP.md:
+    - Перше усвідомлене відхилення від чистого REST (WebSocket-канал,
+      приєднаний до наявного backend-процесу, не новий docker-сервіс).
+    - In-process WS-стан підписок (Map/Set у памʼяті процесу) —
+      задокументоване обмеження для майбутнього multi-instance
+      деплою, не проблема для MVP на одному інстансі.
+    - Модель DM-треду "пара користувач+компетенція" з унікальністю на
+      рівні БД (нормалізована пара менший/більший user_id +
+      competency_id + CHECK).
+  Залоговано три non-blocker зауваження code-reviewer'а: банер
+    ws.error.unauthorized не скидається на успішний реконект; токен у
+    query-параметрі WS URL — усвідомлений trade-off з приміткою про
+    майбутній Cloud Run access-log ризик перед реальним деплоєм;
+    непослідовність encodeURIComponent у кількох методах
+    frontend/src/api/client.js.
+  Tester: PASS with notes — 128/128 backend-тестів, реальний
+    конкурентний тест, anti-enumeration на REST і WS, повний
+    браузерний прохід Playwright по всіх 5 екранах; один баг
+    (дублювання власного повідомлення в UI) знайдено й виправлено до
+    code review.
+  ВАЖЛИВО: CLAUDE.md текстом ще НЕ оновлено цим проходом (той самий
+    підхід, що прецедент US-021…024) — формулювання для розділів
+    "Архітектура"/"Екрани"/"Дані"/"Поза межами цього етапу"
+    підготовлені бізнес-аналітиком у USER_STORIES.md (розділ
+    "походження" перед US-025), застосування — окремий крок.
+  USER_STORIES.md: US-025…US-029 переведено з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", дата лишена 2026-08-25.
+  Коміт: docs: update PROJECT_MAP.md — месенджинг: пошук профілів,
+    DM-чат, груповий чат компетенції, WebSocket-інфраструктура
+    (US-025…US-029)

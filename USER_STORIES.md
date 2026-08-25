@@ -38,11 +38,11 @@
 | US-022 | Публічна видимість борду (read-only без запрошення) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, FE_BoardView, BE_Boards, BE_Tasks, BE_Attachments, BE_TaskComments, DB_Boards |
 | US-023 | Мови борду (мультиселект, довідник languages) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, BE_Boards, BE_Languages, DB_Languages, DB_BoardLanguages |
 | US-024 | Boards overview: секції "Мої дошки"/"Public Boards" + фільтри | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Boards, BE_Boards |
-| US-025 | Пошук профілів за компетентністю (готові викладати) | 🔧 У розробці | 2026-08-25 | FE_PeopleSearch, BE_UserSearch, BE_Competencies |
-| US-026 | Перегляд чужого профілю (публічні дані + запуск DM) | 🔧 У розробці | 2026-08-25 | FE_UserProfile, BE_UserSearch, DB_Users |
-| US-027 | DM-чат за парою користувач+компетенція (реалтайм) | 🔧 У розробці | 2026-08-25 | FE_Chat, BE_DmThreads, DB_DmThreads, DB_DmMessages, Infra_WebSocket |
-| US-028 | Груповий чат компетенції (спільна кімната на competency_id) | 🔧 У розробці | 2026-08-25 | FE_Chat, BE_CompetencyChat, DB_CompetencyChatMessages, Infra_WebSocket |
-| US-029 | Інфраструктура WebSocket (автентифікація Firebase ID token) | 🔧 У розробці | 2026-08-25 | BE_Websocket, Infra_WebSocket |
+| US-025 | Пошук профілів за компетентністю (готові викладати) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_PeopleSearch, BE_UserSearch, BE_Competencies |
+| US-026 | Перегляд чужого профілю (публічні дані + запуск DM) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_UserProfile, BE_UserSearch, DB_Users |
+| US-027 | DM-чат за парою користувач+компетенція (реалтайм) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Chat, BE_DmThreads, DB_DmThreads, DB_DmMessages, Infra_WebSocket |
+| US-028 | Груповий чат компетенції (спільна кімната на competency_id) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Chat, BE_CompetencyChat, DB_CompetencyChatMessages, Infra_WebSocket |
+| US-029 | Інфраструктура WebSocket (автентифікація Firebase ID token) | ✅ Готово (пройшло code review) | 2026-08-25 | BE_Websocket, Infra_WebSocket |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
