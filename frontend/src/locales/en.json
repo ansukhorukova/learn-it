@@ -440,7 +440,24 @@
       "send": "Send",
       "sending": "Sending…",
       "empty": "No messages yet — start the conversation!",
-      "openCta": "Open group chat"
+      "openCta": "Open group chat",
+      "join": "Join chat",
+      "leave": "Leave chat",
+      "joined": "Joined",
+      "unavailable": "This chat is no longer available"
+    },
+    "find": {
+      "title": "Find chats",
+      "searchPlaceholder": "Search competencies…",
+      "emptySearch": "No competencies match your search.",
+      "emptyDirectory": "No competencies available yet.",
+      "openChat": "Open chat"
+    },
+    "messages": {
+      "dmSectionHeading": "Direct messages",
+      "competencySectionHeading": "Competency chats",
+      "findChatsCta": "Find chats",
+      "emptyCompetencyChats": "You haven't joined any competency chats yet."
     }
   },
   "ws": {

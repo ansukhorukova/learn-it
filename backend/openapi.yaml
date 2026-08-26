@@ -498,6 +498,86 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /competencies/{id}/chat/members:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Join a competency's group chat
+      description: >
+        US-031 AC1. Persistent membership (`competency_chat_members`) that
+        determines ONLY what `GET /competency-chats/mine` returns for the
+        caller — it does NOT gate read/write access to the chat itself,
+        which stays "any authenticated user" exactly as in US-028 (AC4).
+        Idempotent get-or-create: returns `201` if this call created the
+        membership row, `200` if the caller was already a member — same
+        contract shape as `POST /dm-threads`. Same 404-for-retired-or-
+        missing-room gate as `POST .../chat/messages` — a chat you cannot
+        open cannot be joined either.
+      operationId: joinCompetencyChat
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: Already a member — no new row created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetencyChatMembership'
+        '201':
+          description: Membership created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompetencyChatMembership'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such competency, or it has been retired (`errors.competencyChat.notFound`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /competencies/{id}/chat/members/me:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: Leave a competency's group chat
+      description: >
+        US-031 AC2/AC3. Hard-deletes the caller's own membership row —
+        membership is a current subscription state, not history, so unlike
+        `competency_chat_messages` the "never delete" principle used
+        elsewhere in this schema does not apply here. Always `204`,
+        including when the caller was never a member (idempotent), AND when
+        the competency has since been deactivated (`is_active = false`) —
+        leaving must stay possible so an archived row can be cleared out of
+        `GET /competency-chats/mine` (US-033 AC5). This endpoint has no
+        error response of its own.
+      operationId: leaveCompetencyChat
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '204':
+          description: Membership removed, or there was none to begin with
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /languages:
     get:
       summary: The active languages dictionary
@@ -2469,6 +2549,43 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /competency-chats/mine:
+    get:
+      summary: List my joined competency chats
+      description: >
+        US-031 AC5. A top-level resource, not nested under `/competencies`
+        or `/users` — a per-user VIEW over `competency_chat_members`, same
+        "no single natural parent" reasoning as `/dm-threads`. Every
+        competency chat the caller has explicitly joined (US-031 AC1) —
+        NEVER auto-populated from `user_competencies`/`willing_to_teach`
+        (AC6) — sorted by last activity (most recent message, or `joinedAt`
+        if the chat has no messages yet) descending, same pattern as `GET
+        /dm-threads` (US-027 AC11/AC12). A chat whose competency has since
+        been deactivated (`is_active = false`) still appears, with
+        `competencyActive: false` (AC7) — the FE renders it as an
+        archived/disabled row (US-033 AC5) instead of a clickable chat.
+      operationId: listMyCompetencyChats
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      responses:
+        '200':
+          description: The caller's joined chats, most recently active first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chats:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CompetencyChatSummary'
+                required: [chats]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   responses:
     Unauthorized:
@@ -3303,6 +3420,57 @@ components:
           type: string
           format: date-time
       required: [id, competencyId, senderId, senderName, body, createdAt]
+
+    CompetencyChatMembership:
+      type: object
+      description: >
+        A `competency_chat_members` row (US-031) — the response body of
+        `POST /competencies/{id}/chat/members`. Deliberately minimal: the
+        FE already knows which competency it just (un)joined, this just
+        confirms the resulting state.
+      properties:
+        competencyId:
+          type: string
+          format: uuid
+        joined:
+          type: boolean
+          description: Always `true` — a successful join, whether newly created (201) or already existing (200).
+      required: [competencyId, joined]
+
+    CompetencyChatSummary:
+      type: object
+      description: >
+        One entry in `GET /competency-chats/mine` (US-031 AC5) — a
+        competency chat the caller has explicitly joined. Mirrors
+        `DmThread`'s shape: `joinedAt` plays the same "fallback activity
+        timestamp when there's no message yet" role `DmThread.createdAt`
+        plays for a thread with no messages (US-027 AC12) — the FE computes
+        display "last activity" as `lastMessage?.createdAt ?? joinedAt`,
+        same pattern as `DmThread`.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The `competency_chat_members` row id (membership id, not a message id).
+        competencyId:
+          type: string
+          format: uuid
+        competencySlug:
+          type: string
+          description: Locale lookup key — rendered via `competency.<slug>` in the FE's own dictionary.
+        competencyActive:
+          type: boolean
+          description: >
+            `false` if the competency has been deactivated since the caller
+            joined (US-031 AC7) — the row still appears here (no cascade
+            delete on retirement) but the FE renders it archived/disabled,
+            with leave as the only available action (US-033 AC5).
+        lastMessage:
+          $ref: '#/components/schemas/DmThreadLastMessage'
+        joinedAt:
+          type: string
+          format: date-time
+      required: [id, competencyId, competencySlug, competencyActive, lastMessage, joinedAt]
 
     ApiError:
       type: object

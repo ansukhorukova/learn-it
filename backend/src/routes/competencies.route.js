@@ -51,4 +51,36 @@ router.post('/:id/chat/messages', requireAuth, async (req, res) => {
   }
 });
 
+// competency_chat_members (US-031) — persistent join/leave. Affects only
+// what GET /api/v1/competency-chats/mine returns for the caller, never the
+// read/write access above (US-031 AC4 — deliberately unchanged from US-028).
+
+// POST /api/v1/competencies/:id/chat/members — join (US-031 AC1).
+// Idempotent get-or-create: 201 if this call created the membership row,
+// 200 if the caller was already a member. Same 404-for-retired-or-missing
+// gate as the messages endpoints above (AC3) — cannot join a chat you
+// couldn't have opened in the first place.
+router.post('/:id/chat/members', requireAuth, async (req, res) => {
+  try {
+    const { created } = await competencyChatService.joinChat(req.params.id, req.firebaseUser.uid);
+    return res.status(created ? 201 : 200).json({ competencyId: req.params.id, joined: true });
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
+// DELETE /api/v1/competencies/:id/chat/members/me — leave (US-031 AC2).
+// Always 204, including when the caller was never a member, or the
+// competency has since been deactivated (AC3) — see
+// competencyChat.service.js's leaveChat for why this endpoint has no error
+// path at all.
+router.delete('/:id/chat/members/me', requireAuth, async (req, res) => {
+  try {
+    await competencyChatService.leaveChat(req.params.id, req.firebaseUser.uid);
+    return res.status(204).send();
+  } catch (err) {
+    return sendServiceError(res, err);
+  }
+});
+
 module.exports = router;

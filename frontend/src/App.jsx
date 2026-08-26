@@ -9,6 +9,7 @@ import UserProfilePage from './pages/UserProfilePage';
 import DmThreadsPage from './pages/DmThreadsPage';
 import DmThreadPage from './pages/DmThreadPage';
 import CompetencyChatPage from './pages/CompetencyChatPage';
+import FindChatsPage from './pages/FindChatsPage';
 import { useAuthUser } from './auth/useAuthUser';
 import { useLocaleSync } from './i18n/useLocaleSync';
 
@@ -33,6 +34,7 @@ function App() {
       <Route path="/messages" element={<DmThreadsPage />} />
       <Route path="/messages/:threadId" element={<DmThreadPage />} />
       <Route path="/competencies/:id/chat" element={<CompetencyChatPage />} />
+      <Route path="/chats/find" element={<FindChatsPage />} />
     </Routes>
   );
 }

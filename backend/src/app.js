@@ -9,6 +9,7 @@ const tasksRouter = require('./routes/tasks.route');
 const competenciesRouter = require('./routes/competencies.route');
 const languagesRouter = require('./routes/languages.route');
 const dmThreadsRouter = require('./routes/dmThreads.route');
+const competencyChatsRouter = require('./routes/competencyChats.route');
 
 const app = express();
 
@@ -66,5 +67,12 @@ app.use('/api/v1/languages', languagesRouter);
 // instead (see competencies.route.js) since a chat room there genuinely
 // does have one natural parent — the competency itself.
 app.use('/api/v1/dm-threads', dmThreadsRouter);
+
+// The caller's own joined competency chats (US-031) — a per-user view over
+// `competency_chat_members`, top-level and distinct from
+// `/competencies/:id/chat/*` (join/leave/message actions on ONE competency,
+// mounted under competenciesRouter above) for the same reason `/dm-threads`
+// is top-level rather than nested under `/users`.
+app.use('/api/v1/competency-chats', competencyChatsRouter);
 
 module.exports = app;

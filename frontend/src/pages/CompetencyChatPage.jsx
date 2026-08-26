@@ -5,7 +5,14 @@ import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
 import { useHeadMeta } from '../lib/useHeadMeta';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { createCompetencyChatMessage, listCompetencyCatalog, listCompetencyChatMessages } from '../api/client';
+import {
+  createCompetencyChatMessage,
+  joinCompetencyChat,
+  leaveCompetencyChat,
+  listCompetencyCatalog,
+  listCompetencyChatMessages,
+  listMyCompetencyChats,
+} from '../api/client';
 import { formatSessionTimestamp } from '../lib/duration';
 import { CHAT_MESSAGE_BODY_MAX_LENGTH } from '../constants/chatMessageLimits';
 import AppHeader from '../components/AppHeader';
@@ -33,6 +40,16 @@ function CompetencyChatPage() {
   const [sending, setSending] = useState(false);
   const [wsErrorKey, setWsErrorKey] = useState(null);
 
+  // US-031 AC8/AC9 — membership control available from ANY entry point into
+  // this screen, not just /chats/find. `null` while unknown (membership
+  // fetch is best-effort — a hiccup never blocks the chat itself, same
+  // non-blocking pattern as the competency-name lookup below); toggling is
+  // optimistic (no re-fetch), the next `/competency-chats/mine` load is what
+  // picks it up on the Messages screen (US-033).
+  const [joined, setJoined] = useState(null);
+  const [membershipErrorKey, setMembershipErrorKey] = useState(null);
+  const [membershipBusy, setMembershipBusy] = useState(false);
+
   const knownMessageIds = useRef(new Set());
 
   const competencyLabel = competencySlug ? t(`competency.${competencySlug}`) : '';
@@ -48,17 +65,22 @@ function CompetencyChatPage() {
     setLoadErrorKey(null);
     try {
       const idToken = await user.getIdToken();
-      const [{ messages: rows }, { competencies }] = await Promise.all([
+      const [{ messages: rows }, { competencies }, mine] = await Promise.all([
         listCompetencyChatMessages(idToken, competencyId),
         // Best-effort — used only to render the room's name; a catalog
         // hiccup never blocks the chat itself (same non-blocking pattern as
         // BoardsPage.jsx's category/language dictionary fetch).
         listCompetencyCatalog(idToken).catch(() => ({ competencies: [] })),
+        // Best-effort — used only to render the join/leave control's initial
+        // state; a hiccup here never blocks reading/writing the chat itself
+        // (US-031 AC4: membership never gates chat access).
+        listMyCompetencyChats(idToken).catch(() => null),
       ]);
       knownMessageIds.current = new Set(rows.map((m) => m.id));
       setMessages(rows);
       const entry = competencies.find((c) => c.id === competencyId);
       setCompetencySlug(entry ? entry.slug : null);
+      setJoined(mine ? mine.chats.some((chat) => chat.competencyId === competencyId) : null);
       setLoadState('ready');
     } catch (err) {
       if (err.messageKey === 'errors.competencyChat.notFound') {
@@ -127,6 +149,29 @@ function CompetencyChatPage() {
     }
   }
 
+  async function handleToggleMembership() {
+    if (!user || membershipBusy) return;
+    const wasJoined = joined;
+    setMembershipBusy(true);
+    setMembershipErrorKey(null);
+    // Optimistic UI (US-031 AC9) — flip immediately, no re-fetch; roll back
+    // only if the request itself fails.
+    setJoined(!wasJoined);
+    try {
+      const idToken = await user.getIdToken();
+      if (wasJoined) {
+        await leaveCompetencyChat(idToken, competencyId);
+      } else {
+        await joinCompetencyChat(idToken, competencyId);
+      }
+    } catch (err) {
+      setJoined(wasJoined);
+      setMembershipErrorKey(err.messageKey || 'errors.generic');
+    } finally {
+      setMembershipBusy(false);
+    }
+  }
+
   return (
     <div className={styles.page}>
       <AppHeader />
@@ -160,7 +205,23 @@ function CompetencyChatPage() {
                   {t('ws.status.reconnecting')}
                 </span>
               )}
+              {joined !== null && (
+                <button
+                  type="button"
+                  className={joined ? styles.leaveButton : styles.joinButton}
+                  onClick={handleToggleMembership}
+                  disabled={membershipBusy}
+                >
+                  {joined ? t('chat.competency.leave') : t('chat.competency.join')}
+                </button>
+              )}
             </div>
+
+            {membershipErrorKey && (
+              <p className={styles.error} role="alert">
+                {t(membershipErrorKey)}
+              </p>
+            )}
 
             {wsErrorKey && (
               <p className={styles.error} role="alert">

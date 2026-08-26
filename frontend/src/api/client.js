@@ -351,3 +351,20 @@ export function listCompetencyChatMessages(idToken, competencyId) {
 export function createCompetencyChatMessage(idToken, competencyId, { body }) {
   return request(`/competencies/${competencyId}/chat/messages`, { method: 'POST', idToken, body: { body } });
 }
+
+// --- Competency chat membership (US-031/032/033) ---
+// Idempotent get-or-create/delete — membership determines ONLY what
+// `listMyCompetencyChats` returns, never read/write access to the chat
+// itself (US-028 access stays unchanged).
+
+export function joinCompetencyChat(idToken, competencyId) {
+  return request(`/competencies/${competencyId}/chat/members`, { method: 'POST', idToken });
+}
+
+export function leaveCompetencyChat(idToken, competencyId) {
+  return request(`/competencies/${competencyId}/chat/members/me`, { method: 'DELETE', idToken });
+}
+
+export function listMyCompetencyChats(idToken) {
+  return request('/competency-chats/mine', { idToken });
+}

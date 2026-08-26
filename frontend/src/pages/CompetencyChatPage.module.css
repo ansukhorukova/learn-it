@@ -33,6 +33,41 @@
 
 .heading {
   font-size: 1.25rem;
+  flex: 1;
+}
+
+.joinButton,
+.leaveButton {
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.joinButton {
+  background: var(--color-accent-amber);
+  color: var(--color-bg);
+  border: none;
+}
+
+.leaveButton {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+}
+
+.joinButton:disabled,
+.leaveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.joinButton:focus-visible,
+.leaveButton:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
 
 .reconnecting {

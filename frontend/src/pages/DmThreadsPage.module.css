@@ -10,6 +10,40 @@
   max-width: 640px;
 }
 
+.section {
+  margin-bottom: var(--space-6);
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.sectionHeading {
+  font-size: 1rem;
+  margin: 0 0 var(--space-4);
+}
+
+.sectionHeaderRow .sectionHeading {
+  margin-bottom: 0;
+}
+
+.findChatsCta {
+  color: var(--color-accent-amber);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.findChatsCta:hover,
+.findChatsCta:focus-visible {
+  text-decoration: underline;
+}
+
 .headerRow {
   display: flex;
   align-items: center;
@@ -89,4 +123,34 @@
   margin-top: var(--space-1);
   color: var(--color-text-faint);
   font-size: 0.75rem;
+}
+
+.archivedRow {
+  opacity: 0.6;
+  border-style: dashed;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.leaveButton {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.leaveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.leaveButton:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
