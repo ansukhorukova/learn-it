@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-25 — месенджинг: пошук профілів, чужий профіль, DM-чат, груповий чат компетенції, WebSocket-інфраструктура (US-025…US-029), новий Рядок 4 з вузлами `FE_PeopleSearch`/`FE_UserProfile`/`FE_Chat`/`BE_UserSearch`/`BE_DmThreads`/`BE_CompetencyChat`/`BE_Websocket`/`Infra_WebSocket`/`DB_DmThreads`/`DB_DmMessages`/`DB_CompetencyChatMessages`.
+Останнє оновлення: 2026-08-26 — персистентне членство в чаті компетенції (join/leave), екран "Знайти чати", розширення розділу "Повідомлення" секцією чатів компетенцій (US-030…US-033), новий вузол `DB_CompetencyChatMembers` у Рядку 4.
 
 ## Легенда
 
@@ -182,13 +182,13 @@ graph TD
   subgraph FE["Frontend"]
     FE_PeopleSearch["🟩 FE_PeopleSearch<br/>/people: пошук за<br/>компетенцією, willing_to_teach"]
     FE_UserProfile["🟩 FE_UserProfile<br/>/users/:id: чужий профіль,<br/>кнопка Написати повідомлення"]
-    FE_Chat["🟩 FE_Chat<br/>/messages, /messages/:threadId,<br/>/competencies/:id/chat"]
+    FE_Chat["🟩 FE_Chat<br/>/messages (+ секція<br/>Чати компетенцій),<br/>/messages/:threadId,<br/>/competencies/:id/chat<br/>(+ join/leave),<br/>/chats/find"]
   end
 
   subgraph BE["Backend (Node.js REST /api/v1 + WS)"]
     BE_UserSearch["🟩 BE_UserSearch<br/>GET /users/search,<br/>GET /users/:id"]
     BE_DmThreads["🟩 BE_DmThreads<br/>POST+GET /dm-threads,<br/>GET+POST /dm-threads/:id/messages"]
-    BE_CompetencyChat["🟩 BE_CompetencyChat<br/>GET+POST<br/>/competencies/:id/chat/messages"]
+    BE_CompetencyChat["🟩 BE_CompetencyChat<br/>GET+POST<br/>/competencies/:id/chat/messages,<br/>POST+DELETE<br/>.../chat/members[/me],<br/>GET /competency-chats/mine"]
     BE_Websocket["🟩 BE_Websocket<br/>WS auth (Firebase token),<br/>subscribe authz, broadcast"]
   end
 
@@ -197,6 +197,7 @@ graph TD
     DB_DmThreads["🟩 DB_DmThreads<br/>dm_threads (user_a_id,<br/>user_b_id, competency_id,<br/>unique пара+компетенція)"]
     DB_DmMessages["🟩 DB_DmMessages<br/>dm_messages"]
     DB_CompetencyChatMessages["🟩 DB_CompetencyChatMessages<br/>competency_chat_messages"]
+    DB_CompetencyChatMembers["🟩 DB_CompetencyChatMembers<br/>competency_chat_members<br/>(user_id, competency_id,<br/>joined_at, unique)"]
   end
 
   subgraph Infra["Infra"]
@@ -216,10 +217,11 @@ graph TD
   BE_DmThreads --> DB_DmMessages
   BE_DmThreads --> BE_Websocket
   BE_CompetencyChat --> DB_CompetencyChatMessages
+  BE_CompetencyChat --> DB_CompetencyChatMembers
   BE_CompetencyChat --> BE_Websocket
   BE_Websocket --> Infra_WebSocket
 
-  class FE_PeopleSearch,FE_UserProfile,FE_Chat,BE_UserSearch,BE_DmThreads,BE_CompetencyChat,BE_Websocket,DB_Users,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,Infra_WebSocket done;
+  class FE_PeopleSearch,FE_UserProfile,FE_Chat,BE_UserSearch,BE_DmThreads,BE_CompetencyChat,BE_Websocket,DB_Users,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,DB_CompetencyChatMembers,Infra_WebSocket done;
 ```
 
 ## Схема БД (таблиці горизонтально, FK-звʼязки вертикально)
@@ -237,6 +239,7 @@ graph TD
   DB_TaskComments["🟩 task_comments<br/>task_id, author_id,<br/>body, created_at"]
   DB_BoardLanguages["🟩 board_languages<br/>board_id, language_id"]
   DB_DmMessages["🟩 dm_messages<br/>thread_id, sender_id,<br/>body, created_at"]
+  DB_CompetencyChatMembers["🟩 competency_chat_members<br/>user_id, competency_id,<br/>joined_at, unique"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>public_name, locale,<br/>last_sign_in_provider"]
   DB_Attachments["🟩 attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
@@ -273,8 +276,10 @@ graph TD
   DB_DmMessages -->|FK| DB_Users
   DB_CompetencyChatMessages -->|FK| DB_Competencies
   DB_CompetencyChatMessages -->|FK| DB_Users
+  DB_CompetencyChatMembers -->|FK| DB_Users
+  DB_CompetencyChatMembers -->|FK| DB_Competencies
 
-  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages done;
+  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,DB_CompetencyChatMembers done;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
@@ -307,3 +312,8 @@ graph TD
   - **Три non-blocker зауваження code-reviewer'а (Approve with comments)**: (1) банер `ws.error.unauthorized` у `AppHeader.jsx` не скидається автоматично на успішний реконект — лишається видимим, доки користувач сам не перезавантажить сторінку; (2) токен у query-параметрі WS URL (`?token=...`) — усвідомлений trade-off (нативний WebSocket API не підтримує кастомні заголовки при handshake), із приміткою про майбутній ризик потрапляння токена в access-логи Cloud Run перед реальним деплоєм (зараз — лише локальний Docker, ризик неактивний); (3) невелика непослідовність застосування `encodeURIComponent` у кількох методах `frontend/src/api/client.js` (є в нових `searchUsers`/`getUserProfile`, відсутня в частині вже наявних методів) — косметичне, не вплинуло на жоден реальний сценарій цього проходу.
   - Tester: PASS with notes — 128/128 backend-тестів (нові файли `dmThreads.test.js`, `competencyChat.test.js`, `userSearchAndProfile.test.js`, `websocket.test.js`), реальний конкурентний тест 15 паралельних `POST /dm-threads` → 1 тред, anti-enumeration підтверджено і на REST (404/403), і на WS-рівні (відмова підписки без розкриття існування треду); повний браузерний прохід Playwright по всіх 5 нових екранів. Один баг знайдено й виправлено до code review: дублювання власного повідомлення в UI при відправці (race між WS-echo і оптимістичним рендером після `POST`) — виправлено в `DmThreadPage.jsx`/`CompetencyChatPage.jsx`.
   - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий підхід, що прецедент US-021…024: формулювання для розділів "Архітектура"/"Екрани"/"Дані"/"Поза межами цього етапу" підготовлені бізнес-аналітиком у `USER_STORIES.md` (розділ "походження" перед US-025), застосування — окремий крок, коли попросять.
+- З фічі "Персистентне членство в чаті компетенції (join/leave), екран 'Знайти чати', розширення розділу 'Повідомлення'" (2026-08-26, US-030…US-033, коміт `3664632`): **третя хвиля месенджинг-області**, продовження Рядка 4 (після US-025…029, коміт `3b4163e`). US-030 не додала коду — формальне підтвердження в бэклозі, що груповий чат на кожну компетенцію (US-028) вже автоматично покриває "чат на кожну наявну й майбутню компетенцію" з оригінального запиту користувача (кімната = сам `competency_id`, без окремої таблиці кімнат). Реальна нова функціональність — US-031…033: нова таблиця `DB_CompetencyChatMembers` (`competency_chat_members`: `user_id`+`competency_id` FK → `users`/`competencies`, `joined_at`, `unique(user_id, competency_id)`, race-safe ідемпотентний join через `onConflict().ignore()`), нові ендпоінти `POST`/`DELETE /api/v1/competencies/:id/chat/members[/me]` і `GET /api/v1/competency-chats/mine` — усі додані як розширення вже done-вузла `BE_CompetencyChat` (новий вузол не заведено, той самий принцип, що попередні розширення контракту, хоча технічно `GET /competency-chats/mine` фізично лежить в окремому новому файлі `backend/src/routes/competencyChats.route.js` — вважається тим самим доменним вузлом, бо це той самий чат компетенції, а не нова область). `FE_Chat` розширено новим екраном `/chats/find` (US-032, пошук по довіднику + join/leave по рядках) і join/leave-контролом на екрані самого чату компетенції (US-031 AC8-9, optimistic UI) — той самий вузол, що вже покриває кілька UI-станів одним записом (`FE_TaskPanel`/`FE_BoardView`-принцип). Розділ "Повідомлення" (`DmThreadsPage.jsx`, той самий компонент, що обслуговує `/messages`) отримав другу секцію "Чати компетенцій" поруч із наявною DM-секцією (US-033), з архівним/задизейбленим рядком і єдиною дією "Вийти з чату" для чатів деактивованих після приєднання компетенцій.
+  - **Ключове архітектурне рішення, явно відмінне від типового патерну проєкту**: членство (`competency_chat_members`) НІКОЛИ не гейтить доступ до самого чату. У решті проєкту авторизаційні сутності (`board_members`/`task_shares`/`attachment_viewers`) визначають саме права доступу; тут навпаки — `GET`/`POST .../chat/messages` лишається "будь-хто автентифікований", як і в US-028, незмінно. Нова таблиця впливає лише на те, що показується в персональному списку "Повідомлення" користувача. Свідомий вибір (уточнено користувачем через AskUserQuestion бізнес-аналітика перед розбиттям на stories), не пропуск.
+  - **Вихід із чату — hard delete**, не soft-delete/архівація, на відміну від "не каскадне видалення", застосованого до суміжних сутностей (`user_competencies`/`board.category_id`/`competency_chat_messages`): те правило стосується каскадного видалення при деактивації батьківської компетенції (рядок членства НЕ видаляється каскадно), а не самої дії виходу користувача (яка завжди hard delete власного рядка) — членство це поточний стан підписки, не історичний запис.
+  - Tester: чистий PASS без знайдених багів — включно з найризикованішим сценарієм (join поки компетенція активна → пряма деактивація в БД → leave все одно проходить, US-031 AC3/AC7), unique constraint під реальним паралельним HTTP-навантаженням (5 паралельних `POST` → 1 рядок, `backend/test/concurrency/competencyChatMembers.test.js`), повний браузерний клік-тест (Playwright) обох нових екранів. i18n-гейт зелений (365 ключів), backend test suite 140/140.
+  - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 і US-025…029 (двічі раніше): формулювання для розділів "Екрани"/"Дані" підготовлені бізнес-аналітиком у `USER_STORIES.md` (розділ "походження" перед US-030), застосування — окремий крок, коли попросять.

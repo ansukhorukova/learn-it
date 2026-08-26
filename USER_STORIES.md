@@ -44,9 +44,9 @@
 | US-028 | Груповий чат компетенції (спільна кімната на competency_id) | ✅ Готово (пройшло code review) | 2026-08-25 | FE_Chat, BE_CompetencyChat, DB_CompetencyChatMessages, Infra_WebSocket |
 | US-029 | Інфраструктура WebSocket (автентифікація Firebase ID token) | ✅ Готово (пройшло code review) | 2026-08-25 | BE_Websocket, Infra_WebSocket |
 | US-030 | Чат на кожну компетенцію — вже реалізовано (без нового коду) | ✅ Готово (реалізовано в US-028, коду не потребує) | 2026-08-26 | FE_Chat, BE_CompetencyChat |
-| US-031 | Персистентне членство в чаті компетенції (Join/Leave) | 🔧 У розробці (BE готовий, потрібен FE) | 2026-08-26 | FE_Chat, BE_CompetencyChat, DB_CompetencyChatMembers |
-| US-032 | Екран "Знайти чати" (пошук і приєднання) | 🔧 У розробці (BE reuse готовий, потрібен FE) | 2026-08-26 | FE_Chat, BE_CompetencyChat |
-| US-033 | Розділ "Повідомлення": секція приєднаних чатів компетенцій | 🔧 У розробці (BE reuse готовий, потрібен FE) | 2026-08-26 | FE_Chat, BE_CompetencyChat, BE_DmThreads |
+| US-031 | Персистентне членство в чаті компетенції (Join/Leave) | ✅ Готово (пройшло code review) | 2026-08-26 | FE_Chat, BE_CompetencyChat, DB_CompetencyChatMembers |
+| US-032 | Екран "Знайти чати" (пошук і приєднання) | ✅ Готово (пройшло code review) | 2026-08-26 | FE_Chat, BE_CompetencyChat |
+| US-033 | Розділ "Повідомлення": секція приєднаних чатів компетенцій | ✅ Готово (пройшло code review) | 2026-08-26 | FE_Chat, BE_CompetencyChat, BE_DmThreads |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
