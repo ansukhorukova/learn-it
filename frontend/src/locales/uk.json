@@ -142,7 +142,7 @@
       "totalTime": "Всього: {duration}",
       "thisWeek": "За цей тиждень: {duration}",
       "noTimeYet": "Ще немає записаного часу",
-      "rename": "Перейменувати",
+      "rename": "Редагувати",
       "delete": "Видалити"
     },
     "delete": {

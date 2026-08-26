@@ -140,7 +140,7 @@
       "totalTime": "Total: {duration}",
       "thisWeek": "This week: {duration}",
       "noTimeYet": "No time logged yet",
-      "rename": "Rename",
+      "rename": "Edit",
       "delete": "Delete"
     },
     "delete": {
