@@ -1,8 +1,17 @@
 // VITE_API_URL already includes the /api/v1 prefix (see docker-compose.yml /
-// .env.example). Never hardcode localhost/backend here — the same built
-// bundle must work against Cloud Run in production via a different
-// VITE_API_URL at build time.
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api/v1';
+// .env.example). Never hardcode a fixed host here — the same built bundle
+// must work against Cloud Run in production via a different VITE_API_URL at
+// build time.
+//
+// When VITE_API_URL is not set (local dev), the API base is derived from the
+// browser's own hostname so the app works both at http://localhost:5173 and
+// from another device on the LAN (http://<host-lan-ip>:5173) against the
+// backend published on port 4000 — `localhost` would otherwise resolve to
+// the visiting device, not the Docker host.
+const DEV_API_PORT = 4000;
+export const API_URL =
+  import.meta.env.VITE_API_URL ||
+  `${window.location.protocol}//${window.location.hostname}:${DEV_API_PORT}/api/v1`;
 
 /**
  * Calls GET /api/v1/users/me with the Firebase ID token, which idempotently

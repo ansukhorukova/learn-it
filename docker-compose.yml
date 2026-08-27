@@ -74,7 +74,13 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_URL: http://localhost:4000/api/v1
+      # Left unset for local dev: the FE derives the API base from the
+      # browser's own hostname (window.location), so the app works both at
+      # http://localhost:5173 and from another device on the LAN
+      # (http://<host-lan-ip>:5173) with no per-machine config. Set it (e.g.
+      # via the root .env) only to point at a non-default backend; production
+      # builds always set it explicitly.
+      VITE_API_URL: ${VITE_API_URL:-}
       VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
       VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
       VITE_FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
