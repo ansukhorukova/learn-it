@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-27 — імпорт дошки з файлу (US-037 BE + US-038 FE); нові вузли `BE_BoardImport` (`POST /boards/import` — транзакційне bulk-створення board + tasks + note-attachments із розпарсованого JSON, slug→id резолв competencies/languages, warnings[]) і `FE_BoardImport` (`ImportBoardModal`) у Рядку 2. Без міграції БД — реюз `boards`/`tasks`/`attachments` і довідників.
+Останнє оновлення: 2026-08-27 — персональний статус таски для глядача публічного борду без членства + право коментувати (US-039 BE + US-040 FE, коміт `315febd`). Новий вузол `DB_TaskPersonalStatus` (Рядок 2 + ER-схема) — таблиця `task_personal_status`; `BE_Tasks` отримав `PUT /tasks/:id/my-status` і overlay-резолв `status` для `myRole='public'`; `BE_TaskComments` — гейт `POST` розширено на роль `public`; `FE_BoardView` став інтерактивним для публічного глядача. Свідоме звуження інваріантів CLAUDE.md ("статус спільний" / "коментарі без права додавати") виключно для випадку публічний борд + глядач без реального членства.
 
 ## Легенда
 
@@ -81,7 +81,7 @@ graph TD
     FE_Boards["🟩 FE_Boards<br/>Boards overview: сітка<br/>Мої дошки, create/rename/delete,<br/>Public Boards + фільтри<br/>категорія/мова"]
     FE_BoardImport["🟩 FE_BoardImport<br/>ImportBoardModal: вибір .json<br/>→ FE-парсинг + легка<br/>структурна перевірка<br/>→ прев'ю → сабміт,<br/>warnings/success на BoardView"]
     FE_Shared["⬜ FE_Shared<br/>Shared with me"]
-    FE_BoardView["🟩 FE_BoardView<br/>Board view: 3 колонки,<br/>drag-and-drop + a11y select,<br/>бейджі категорії/мов,<br/>public-viewer банер"]
+    FE_BoardView["🟩 FE_BoardView<br/>Board view: 3 колонки,<br/>drag-and-drop + a11y select,<br/>бейджі категорії/мов,<br/>public-viewer: інтерактивний<br/>(персон. статус overlay)"]
     FE_SharePanel["🟩 FE_SharePanel<br/>керування доступом:<br/>форма+список учасників,<br/>myRole-gating"]
   end
 
@@ -89,7 +89,7 @@ graph TD
     BE_Boards["🟩 BE_Boards<br/>/boards CRUD + myRole<br/>+ GET /boards/public<br/>+ category/visibility/languages"]
     BE_BoardImport["🟩 BE_BoardImport<br/>POST /boards/import:<br/>одна транзакція board+tasks+<br/>note-attachments, вся валідація<br/>до транзакції, slug→id<br/>competencies/languages,<br/>1 МБ ліміт тіла, warnings[]"]
     BE_BoardMembers["🟩 BE_BoardMembers<br/>/boards/:id/members CRUD"]
-    BE_Tasks["🟩 BE_Tasks<br/>/boards/:id/tasks CRUD<br/>+ статус/позиція + myRole"]
+    BE_Tasks["🟩 BE_Tasks<br/>/boards/:id/tasks CRUD<br/>+ статус/позиція + myRole<br/>+ PUT /tasks/:id/my-status<br/>(персон. статус, лише role=public;<br/>overlay-резолв status у GET)"]
     BE_Languages["🟩 BE_Languages<br/>GET /languages"]
   end
 
@@ -100,6 +100,7 @@ graph TD
     DB_Languages["🟩 DB_Languages<br/>languages (довідник)"]
     DB_BoardLanguages["🟩 DB_BoardLanguages<br/>board_languages"]
     DB_Attachments["🟩 DB_Attachments<br/>attachments (див. Рядок 3) —<br/>note-вкладення з імпорту"]
+    DB_TaskPersonalStatus["🟩 DB_TaskPersonalStatus<br/>task_personal_status<br/>(task_id, user_id, status,<br/>unique) — персон. overlay,<br/>лише myRole=public"]
   end
 
   FE_Boards --> FE_Shared
@@ -122,8 +123,9 @@ graph TD
   FE_BoardView --> BE_Tasks
   BE_Tasks --> DB_Tasks
   BE_Tasks --> DB_Boards
+  BE_Tasks --> DB_TaskPersonalStatus
 
-  class FE_Boards,FE_BoardImport,FE_BoardView,FE_SharePanel,BE_Boards,BE_BoardImport,BE_BoardMembers,BE_Tasks,BE_Languages,DB_Boards,DB_BoardMembers,DB_Tasks,DB_Languages,DB_BoardLanguages,DB_Attachments done;
+  class FE_Boards,FE_BoardImport,FE_BoardView,FE_SharePanel,BE_Boards,BE_BoardImport,BE_BoardMembers,BE_Tasks,BE_Languages,DB_Boards,DB_BoardMembers,DB_Tasks,DB_Languages,DB_BoardLanguages,DB_Attachments,DB_TaskPersonalStatus done;
   class FE_Shared planned;
 ```
 
@@ -146,7 +148,7 @@ graph TD
     BE_TimeEntries["🟩 BE_TimeEntries<br/>/tasks/:id/time-entries"]
     BE_TaskShares["🟩 BE_TaskShares<br/>/tasks/:id/shares CRUD<br/>+ GET /tasks/:id"]
     BE_Attachments["🟩 BE_Attachments<br/>/tasks/:id/attachments<br/>+ signed URL"]
-    BE_TaskComments["🟩 BE_TaskComments<br/>GET+POST<br/>/tasks/:id/comments<br/>+ replyToCommentId<br/>(flatten на рівні 3)"]
+    BE_TaskComments["🟩 BE_TaskComments<br/>GET+POST<br/>/tasks/:id/comments<br/>+ replyToCommentId<br/>(flatten на рівні 3),<br/>гейт POST: owner/collab/public"]
     BE_TeamView["⬜ BE_TeamView<br/>агрегація team view"]
   end
 
@@ -260,6 +262,7 @@ graph TD
   DB_BoardLanguages["🟩 board_languages<br/>board_id, language_id"]
   DB_DmMessages["🟩 dm_messages<br/>thread_id, sender_id, body, created_at,<br/>reply_to_message_id,<br/>forwarded_from_competency_id"]
   DB_CompetencyChatMembers["🟩 competency_chat_members<br/>user_id, competency_id,<br/>joined_at, unique"]
+  DB_TaskPersonalStatus["🟩 task_personal_status<br/>task_id, user_id, status,<br/>created_at, updated_at,<br/>unique(task_id, user_id)"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>public_name, locale,<br/>last_sign_in_provider"]
   DB_Attachments["🟩 attachments<br/>task_id, kind, title,<br/>storage_path/url, visibility"]
@@ -286,6 +289,8 @@ graph TD
   DB_TaskComments -->|FK, CASCADE| DB_Tasks
   DB_TaskComments -->|FK| DB_Users
   DB_TaskComments -.FK self, parent CASCADE / reply_to SET NULL.-> DB_TaskComments
+  DB_TaskPersonalStatus -->|FK, CASCADE| DB_Tasks
+  DB_TaskPersonalStatus -->|FK, CASCADE| DB_Users
   DB_BoardLanguages -->|FK| DB_Boards
   DB_BoardLanguages -->|FK| DB_Languages
   DB_Attachments -->|FK| DB_Tasks
@@ -304,7 +309,7 @@ graph TD
   DB_CompetencyChatMembers -->|FK| DB_Users
   DB_CompetencyChatMembers -->|FK| DB_Competencies
 
-  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,DB_CompetencyChatMembers done;
+  class DB_Users,DB_Tasks,DB_Boards,DB_Attachments,DB_TimeEntries,DB_BoardMembers,DB_TaskShares,DB_AttachmentViewers,DB_UserCompetencies,DB_Competencies,DB_TaskComments,DB_Languages,DB_BoardLanguages,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,DB_CompetencyChatMembers,DB_TaskPersonalStatus done;
 ```
 
 ## Відомі прогалини / follow-ups (не блокери, залоговано для пізніше)
@@ -360,3 +365,14 @@ graph TD
   - `backend/src/lib/apiError.js` (`sendError`) і `backend/src/lib/serviceErrors.js` (`ValidationError`) розширені опційним `params` для параметризованих locale-ключів (`{index}`/`{max}`/`{slug}`) — деталь всередині наявного error-контуру, окремого вузла не заведено. `frontend/src/api/client.js` — новий `importBoard()`. Нові locale-ключі `errors.boardImport.*`, `board.import.*`, `board.import.warning.*` (EN/UK повні).
   - Tester/code review: **Approve with comments**, усі зауваження враховані до фіналізації, нових "відомих прогалин" не залоговано. Новий тест-файл `backend/test/concurrency/boardImport.test.js`.
   - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 / US-025…029 / US-030…033 / US-034…036: підготовлені формулювання для розділів "API" (додати `POST /boards/import`), "Екрани" п.2 (дія "Імпортувати з файлу" в секції "Мої дошки"), "Поведінка" (імпорт = борд + усі таски + усі note-вкладення в одній транзакції) — у записі US-037…US-038 в `USER_STORIES.md`; застосування — окремий крок.
+- З фічі "Персональний статус таски для глядача публічного борду + право коментувати" (2026-08-27, US-039 BE + US-040 FE, коміт `315febd`, code review: **Approve with comments**): **свідоме звуження двох задокументованих інваріантів CLAUDE.md виключно для випадку "борд `visibility=public` + автентифікований глядач без реального членства" (`myRole='public'`, роль запроваджена US-022)**. Фідбек користувача: публічний борд = навчальний шаблон, кожен проходить його сам, тож статус тасок має бути в кожного власний (час уже приватний з US-022, не тема цієї зміни).
+  - Розділ CLAUDE.md "Шеринг" зараз каже "Статус таски на спільному борді спільний (один Planned/In Progress/Done стан на всіх)" і "коментарі (без права додавати)" для публічного відвідувача — обидва правила тепер мають виняток для ролі `public`. Owner і всі реальні учасники (`board_members`/`task_shares` будь-якої ролі) між собою — статус, як і раніше, СПІЛЬНИЙ, без змін.
+  - **Новий `done`-вузол `DB_TaskPersonalStatus` (Рядок 2 + ER-схема БД)** — таблиця `task_personal_status` (`id` uuid PK, `task_id` FK → `tasks` ON DELETE CASCADE, `user_id` text FK → `users` ON DELETE CASCADE, `status` — той самий enum `task_status`, що `tasks.status`, `NOT NULL DEFAULT 'planned'`, `created_at`/`updated_at`, `UNIQUE(task_id, user_id)`, btree-індекс на `user_id` під резолв-запит `WHERE user_id = ? AND task_id IN (...)`). Міграція `backend/migrations/20260827120000_create_task_personal_status_table.js`. Новий сервіс `backend/src/services/taskPersonalStatus.service.js` (`setMyStatus` — race-safe upsert, `getPersonalStatus(es)`) — деталь усередині `BE_Tasks`, окремого вузла не заведено. Розміщений у Рядку 2, а не Рядку 3, бо єдиний вузол, що його пише й резолвить, — `BE_Tasks` (сервіс `tasks.service.js`), який живе в Рядку 2; ребро `BE_Tasks --> DB_TaskPersonalStatus` замикається всередині рядка, жодної міжрядкової стрілки. Концептуально overlay успадковує **абсолютну приватність `time_entries`** — owner і реальні учасники НІКОЛИ не бачать чужий персональний статус (ні рядка, ні лічильника, ні агрегованої суми).
+  - **`BE_Tasks` розширено без зміни статусу** (вже `done`): новий `PUT /api/v1/tasks/:id/my-status {status}` — race-safe upsert (`onConflict(['task_id','user_id']).merge()`, прецедент ідемпотентного join `competency_chat_members` US-031), дозволений ЛИШЕ для ефективної ролі `public`; будь-яке реальне членство → 403 `errors.task.personalStatusNotApplicable` (новий ключ). Резолв поля `status` у `listTasksForBoard`/`getTaskForUser`: для таски з `myRole='public'` віддається рядок `task_personal_status` (фолбек `'planned'`), для реальних ролей — спільний `tasks.status` без змін; `columnTotals` рахуються за резолвнутим (персональним) статусом, `boardTotalSeconds` без змін. `PATCH /tasks/:id` для `public` — БЕЗ ЗМІН, 403 `errors.task.readOnlyAccess` (US-022 AC3); персональний статус пишеться виключно через `PUT .../my-status`. Змішаний випадок (`task_shares` viewer рівно на одну таску публічного борду без членства в борді) — саме та таска показує спільний `tasks.status` (`myRole='viewer'`), решта — overlay (прямий наслідок US-014/US-022 AC7).
+  - **`BE_TaskComments` — гейт `POST /tasks/:id/comments` розширено** (лейбл доповнено "гейт POST: owner/collab/public"): owner / collaborator / `public` можуть додавати коментар; **реальний `board_members` viewer лишається read-only** (403 `errors.task.readOnlyAccess`, US-019 AC3 без змін — зміна стосується виключно ролі `public`, не реального viewer). Технічно `requireTaskRole(..., 'viewer')` + `if (role === 'viewer') throw ForbiddenError` замість колишнього `requireTaskRole(..., 'collaborator')`. Коментарі лишаються спільними й видимими всім з доступом; `GET` і FE-дерево відповідей (US-034) не зачіпаються. Вузол `BE_TaskComments` не пише в `task_personal_status` — нового ребра не додано.
+  - **FE (`FE_BoardView`, Рядок 2 — лейбл оновлено на "public-viewer: інтерактивний (персон. статус overlay)")**: публічний борд став частково інтерактивним — контрол статусу (`<select>`) і drag-and-drop між колонками АКТИВНІ для `task.myRole === 'public'` (на відміну від реального viewer, у якого задизейблені, US-016), пишуть `PUT .../my-status` через новий клієнт `frontend/src/api/client.js` `setMyTaskStatus` (не `PATCH`); оптимістичне оновлення з відкатом і локалізованим банером помилки (той самий патерн, що наявні `handleStatusChange`/`handleDragEnd`). Переміщення в межах однієї колонки для глядача не персиститься (позиція на публічному борді спільна, BE не приймає персональний порядок). Кнопки "Видалити/Додати таску", "Керувати доступом", rename/delete борду лишаються прихованими. Текст ключа `sharing.publicViewerBanner` змінено + новий `boardView.publicProgress.hint`.
+  - **FE (`FE_TaskPanel`, Рядок 3 — без зміни статусу/лейбла)**: форма додавання коментаря + кнопки "Відповісти" (US-034) активні для `public`; реальний viewer — банер `taskPanel.comments.viewerBanner` без форми, без змін (US-019 AC3). "Опис", "Оцінений час", "Вкладення" лишаються read-only для `public` (US-022 AC4). Новий хелпер `frontend/src/lib/roles.js` `canComment(role) = owner|collaborator|public` (решта write-UI таски гейтиться наявним `canWrite` без `public`) — деталь реалізації всередині вже задокументованих FE-вузлів, окремого вузла не заведено (той самий принцип, що `canWrite`/`roles.js` у US-013…017).
+  - **`public → private`**: рядки `task_personal_status` ЗБЕРІГАЮТЬСЯ (не чистяться) — дешево, дає відновити прогрес при поверненні до `public`; доступ колишній глядач втрачає негайно через авторизаційний гейт (`GET`/`PUT .../my-status`/`POST .../comments` → 403); каскад `ON DELETE CASCADE` на `task_id` і `user_id` прибирає рядки при видаленні таски / борду / користувача — осиротілих рядків не буває. Свідомий вибір (той самий, що для `competency_chat_members` при деактивації компетенції).
+  - Tester: новий файл `backend/test/concurrency/taskPersonalStatus.test.js` (+ правки в `boardCategoryVisibilityLanguages.test.js`). Code review: **Approve with comments**, усі зауваження враховані до фіналізації, нових "відомих прогалин" не залоговано.
+  - Нові locale-ключі `errors.task.personalStatusNotApplicable`, `boardView.publicProgress.hint`, зміна тексту наявного `sharing.publicViewerBanner` (EN/UK повні). Реюз без нових рядків: `errors.task.invalidStatus`, `errors.task.forbidden`, `errors.task.notFound`, `errors.task.readOnlyAccess`, `errors.board.forbidden`.
+  - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 / US-025…029 / US-030…033 / US-034…036 / US-037…038: підготовлені формулювання для розділів "Шеринг" (персональний статус + право коментувати для публічного відвідувача), "Екрани" п.3 (глядач рухає картки — пише персональний статус), "Екрани" п.4 підпункт "Коментарі" (owner/collab і відвідувач публічного борду додають; реальний viewer read-only), "Дані" (таблиця `task_personal_status`), "Поведінка" (статус спільний; для відвідувача публічного борду без членства — персональний, стартує з `planned`), "API" (додати `PUT /tasks/:id/my-status`) — у розділі "походження" US-039…US-040 в `USER_STORIES.md`; застосування — окремий крок.

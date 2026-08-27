@@ -831,3 +831,77 @@ PROJECT_MAP.md — історія змін
     "✅ Готово (пройшло code review)", дата 2026-08-27.
   Коміт: docs: update PROJECT_MAP.md — імпорт дошки з файлу
     (US-037, US-038)
+
+2026-08-27 — Персональний статус таски для глядача публічного борду
+             без членства + право коментувати (US-039 BE + US-040 FE,
+             code review: Approve with comments, коміт 315febd)
+  Свідоме звуження двох задокументованих інваріантів CLAUDE.md ("статус
+    таски на спільному борді спільний", "коментарі без права додавати
+    для публічного відвідувача") — ВИКЛЮЧНО для випадку "борд
+    visibility=public + автентифікований глядач без реального членства"
+    (myRole='public', роль з US-022). Owner і реальні учасники між собою
+    — статус лишається спільним, без змін.
+  Додано новий вузол (Рядок 2 — Boards/Board view + ER-схема БД):
+    DB_TaskPersonalStatus — 🟩 done, таблиця task_personal_status
+    (id, task_id FK→tasks CASCADE, user_id text FK→users CASCADE,
+    status enum task_status DEFAULT 'planned', created_at, updated_at,
+    unique(task_id, user_id), btree-індекс на user_id). Міграція
+    20260827120000_create_task_personal_status_table.js. Розміщений у
+    Рядку 2 (не Рядку 3), бо єдиний вузол, що його пише/резолвить, —
+    BE_Tasks (tasks.service.js), який живе в Рядку 2; ребро
+    BE_Tasks --> DB_TaskPersonalStatus замикається всередині рядка,
+    без міжрядкових стрілок. Приватність overlay абсолютна — успадкована
+    verbatim з time_entries (owner ніколи не бачить чужий персональний
+    статус). ER-схема: FK-ребра DB_TaskPersonalStatus -->|FK, CASCADE|
+    DB_Tasks і --> DB_Users.
+  Розширено без зміни статусу (лишаються done):
+    - BE_Tasks (Рядок 2) — лейбл доповнено "+ PUT /tasks/:id/my-status
+      (персон. статус, лише role=public; overlay-резолв status у GET)".
+      Новий сервіс taskPersonalStatus.service.js (setMyStatus race-safe
+      upsert, getPersonalStatus(es)) — деталь усередині BE_Tasks.
+      Резолв status у listTasksForBoard/getTaskForUser: myRole='public'
+      → рядок task_personal_status (фолбек 'planned'); реальні ролі →
+      спільний tasks.status без змін. columnTotals за резолвнутим
+      статусом. PATCH /tasks/:id для public — без змін (403
+      errors.task.readOnlyAccess). Нова помилка
+      errors.task.personalStatusNotApplicable (реальне членство → 403).
+    - BE_TaskComments (Рядок 3) — лейбл доповнено "гейт POST:
+      owner/collab/public". Гейт createComment розширено: owner /
+      collaborator / public можуть коментувати; реальний board_members
+      viewer лишається read-only (403 errors.task.readOnlyAccess,
+      US-019 AC3 без змін). Вузол не пише в task_personal_status —
+      нового ребра не додано.
+    - FE_BoardView (Рядок 2) — лейбл оновлено на "public-viewer:
+      інтерактивний (персон. статус overlay)". <select> статусу й
+      drag-and-drop активні для task.myRole='public', пишуть
+      PUT .../my-status через новий client.setMyTaskStatus (не PATCH),
+      оптимістично з відкатом. Внутрішньоколонкове переміщення не
+      персиститься. Кнопки видалення/додавання таски, керування
+      доступом, rename/delete борду лишаються прихованими.
+    - FE_TaskPanel (Рядок 3) — без зміни статусу/лейбла: форма
+      коментаря + "Відповісти" активні для public; реальний viewer —
+      банер без форми (без змін). Новий хелпер roles.js
+      canComment(role)=owner|collaborator|public — деталь усередині
+      вузла.
+  public → private: рядки task_personal_status зберігаються (не
+    чистяться); доступ глядач втрачає негайно через авторизаційний
+    гейт; ON DELETE CASCADE прибирає рядки при видаленні таски/борду/
+    користувача.
+  Нові locale-ключі: errors.task.personalStatusNotApplicable,
+    boardView.publicProgress.hint; зміна тексту sharing.publicViewerBanner
+    (EN/UK повні).
+  Відомих прогалин не залоговано — Approve with comments, усі
+    зауваження враховані до фіналізації. Новий тест-файл
+    backend/test/concurrency/taskPersonalStatus.test.js.
+  CLAUDE.md текстом НЕ оновлено цим проходом — прецедент US-021…024 /
+    US-025…029 / US-030…033 / US-034…036 / US-037…038: підготовлені
+    формулювання для розділів "Шеринг"/"Екрани" п.3,п.4/"Дані"/
+    "Поведінка"/"API" — у розділі "походження" US-039…US-040 в
+    USER_STORIES.md; застосування — окремий крок.
+  USER_STORIES.md: US-039, US-040 переведено з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", дата 2026-08-27.
+  README.md: рядок "Project status" доповнено "per-viewer personal
+    task status on public boards".
+  Коміт: docs: update PROJECT_MAP.md — персональний статус таски для
+    глядача публічного борду без членства + право коментувати
+    (US-039, US-040)

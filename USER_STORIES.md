@@ -52,8 +52,8 @@
 | US-036 | Форвард повідомлень (лише з чату компетенції, заборонено з DM) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Chat, FE_ChatConversation, FE_ForwardMessageModal, BE_ChatForwards, BE_DmThreads, BE_CompetencyChat, DB_DmMessages, DB_CompetencyChatMessages |
 | US-037 | Імпорт дошки з файлу: транзакційне створення на бекенді | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Boards, BE_BoardImport, BE_Boards, BE_Competencies, BE_Languages, DB_Boards, DB_Tasks, DB_Attachments |
 | US-038 | Імпорт дошки з файлу: точка входу і клієнтський флоу | ✅ Готово (пройшло code review) | 2026-08-27 | FE_BoardImport, FE_Boards, BE_BoardImport |
-| US-039 | Персональний статус таски для глядача публічного борду + коментарі від глядача | 🔧 У розробці | 2026-08-27 | BE_Tasks, BE_TaskComments, DB_TaskPersonalStatus, DB_Tasks, DB_TaskComments |
-| US-040 | Інтерактивний публічний борд: персональний статус і форма коментаря для глядача | 🔧 У розробці | 2026-08-27 | FE_BoardView, FE_TaskPanel, BE_Tasks, BE_TaskComments |
+| US-039 | Персональний статус таски для глядача публічного борду + коментарі від глядача | ✅ Готово (пройшло code review) | 2026-08-27 | BE_Tasks, BE_TaskComments, DB_TaskPersonalStatus, DB_Tasks, DB_TaskComments |
+| US-040 | Інтерактивний публічний борд: персональний статус і форма коментаря для глядача | ✅ Готово (пройшло code review) | 2026-08-27 | FE_BoardView, FE_TaskPanel, BE_Tasks, BE_TaskComments |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
