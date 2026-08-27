@@ -428,6 +428,10 @@ async function deleteBoard(boardId, ownerId) {
 module.exports = {
   ACCENTS,
   VISIBILITIES,
+  // Exported for boardImport.service.js (US-037) — the import endpoint's
+  // response `board` field must be the exact same shape as `POST /boards`,
+  // which is `toBoardSummary`'s output.
+  toBoardSummary,
   listBoardsForOwner,
   listPublicBoards,
   createBoard,

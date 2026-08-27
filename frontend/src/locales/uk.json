@@ -132,6 +132,27 @@
         "descriptionTooLong": "Опис має містити не більше 2000 символів"
       }
     },
+    "import": {
+      "cta": "Імпортувати з файлу",
+      "chooseAnother": "Обрати інший файл",
+      "previewTitle": "Імпорт дошки",
+      "previewSummary": "Імпортувати «{title}»?",
+      "confirm": "Імпортувати",
+      "cancel": "Скасувати",
+      "importing": "Імпортування…",
+      "success": "Дошку «{title}» імпортовано.",
+      "warningsHeading": "Імпортовано із зауваженнями:",
+      "dismissWarnings": "Сховати",
+      "warning": {
+        "unknownCategory": "Категорію «{slug}» не розпізнано — пропущено.",
+        "inactiveCategory": "Категорія «{slug}» більше недоступна — пропущено.",
+        "unknownLanguage": "Мову «{slug}» не розпізнано — пропущено.",
+        "inactiveLanguage": "Мова «{slug}» більше недоступна — пропущено.",
+        "plannedMinutesDropped": "Оцінку часу для «{taskTitle}» вказано некоректно — залишено порожньою.",
+        "attachmentSkipped": "Порожнє вкладення-нотатку для «{taskTitle}» пропущено.",
+        "attachmentBodyTruncated": "Вкладення-нотатку для «{taskTitle}» скорочено до {max} символів."
+      }
+    },
     "card": {
       "taskCount": {
         "one": "{count} таска",
@@ -551,6 +572,18 @@
       "categoryInactive": "Цю категорію більше не можна призначити.",
       "visibilityInvalid": "Некоректне значення видимості.",
       "languageInvalid": "Одна з обраних мов не існує або більше не доступна."
+    },
+    "boardImport": {
+      "invalidJson": "Цей файл не є коректним JSON.",
+      "invalidStructure": "Структура файлу не відповідає очікуваному формату дошки.",
+      "boardTitleRequired": "Дошка у файлі має містити назву.",
+      "boardTitleTooLong": "Назва дошки має містити не більше 100 символів.",
+      "tasksRequired": "Файл має містити принаймні одну таску.",
+      "tooManyTasks": "За один імпорт можна створити не більше {max} тасок.",
+      "taskTitleRequired": "Таска №{index} у файлі не має назви.",
+      "taskTitleTooLong": "Таска №{index}: назва має містити не більше 200 символів.",
+      "taskNotesTooLong": "Таска №{index}: опис має містити не більше 2000 символів.",
+      "fileTooLarge": "Файл завеликий для імпорту."
     },
     "task": {
       "notFound": "Таску не знайдено.",

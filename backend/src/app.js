@@ -11,6 +11,7 @@ const languagesRouter = require('./routes/languages.route');
 const dmThreadsRouter = require('./routes/dmThreads.route');
 const competencyChatsRouter = require('./routes/competencyChats.route');
 const chatForwardsRouter = require('./routes/chatForwards.route');
+const boardImportRouter = require('./routes/boardImport.route');
 
 const app = express();
 
@@ -25,6 +26,15 @@ app.set('trust proxy', 1);
 // TODO: restrict to the actual deployed frontend origin(s) via env var once
 // production hosting (Firebase Hosting) is configured — permissive for local dev.
 app.use(cors());
+
+// US-037: mounted BEFORE the global express.json() so boardImport.route.js's
+// own 1 MB body parser is the one that runs for POST /api/v1/boards/import
+// (the global parser's default ~100 KB limit would otherwise reject a large
+// import before it reached the route). Every other method/path under
+// /api/v1/boards/import falls through to the global parser and boardsRouter
+// below unchanged.
+app.use('/api/v1/boards/import', boardImportRouter);
+
 app.use(express.json());
 
 // Versioned REST API per CLAUDE.md ("API-first" — /api/v1/...).

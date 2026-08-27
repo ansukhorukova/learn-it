@@ -93,6 +93,49 @@
   margin-bottom: var(--space-4);
 }
 
+/* US-038 AC7: dismissible non-blocking notes from a board import. Neutral
+   surface like .infoBanner — the import succeeded, these are just notes. */
+.importWarnings {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  font-size: 0.875rem;
+  margin-bottom: var(--space-4);
+}
+
+.importWarningsHeading {
+  margin: 0 0 var(--space-2);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.importWarningsList {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.importWarningsDismiss {
+  margin-top: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.importWarningsDismiss:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
 /* US-021/US-023: category + language badges under the board title. */
 .badgeRow {
   display: flex;

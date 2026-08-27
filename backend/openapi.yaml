@@ -835,6 +835,83 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /boards/import:
+    post:
+      summary: Import a board (with tasks + note attachments) from a file
+      description: >
+        US-037 — a top-level action resource (same pattern as `POST
+        /chat/forwards`): bulk-creates a board plus every task and every
+        task's optional note attachment from one parsed JSON file, in a
+        SINGLE all-or-nothing transaction. There is no partial import — any
+        critical validation failure (400/413 below) is thrown BEFORE the
+        transaction opens, so nothing is created.
+
+        Auth only, no role check — the caller creates their OWN board,
+        exactly like `POST /boards`. Server-authoritative fields (AC4): the
+        new board is always `visibility: 'private'`, every task is
+        `status: 'planned'` with `position = (index + 1) * 1000` in file
+        order, every attachment is `kind: 'note'` / `visibility: 'private'`,
+        and `ownerId`/`createdBy` is always the caller — any of these
+        present in the file is ignored.
+
+        Non-critical issues never block the import and come back in
+        `warnings` (a list of `{code, params}` — a locale key + its params,
+        formatted by the FE's own dictionary, same principle as an error
+        `messageKey`): an unknown/inactive `category` or `languages` slug,
+        an invalid `planned_minutes` (dropped to null), an empty attachment
+        body (attachment skipped), or an attachment body over 20000
+        characters (trimmed to 20000).
+
+        The request body has its own 1 MB limit (AC15), independent of
+        other endpoints — over it is `413 errors.boardImport.fileTooLarge`.
+      operationId: importBoard
+      tags: [boards]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        description: The parsed contents of the import file.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardImportRequest'
+      responses:
+        '201':
+          description: The board was created (possibly with non-blocking warnings).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardImportResult'
+        '400':
+          description: >
+            A critical validation failure — nothing was created. Possible
+            `messageKey`s: `errors.boardImport.invalidJson` (body wasn't
+            parseable JSON), `errors.boardImport.invalidStructure` (not a
+            `{board: object, tasks: array}` shape),
+            `errors.boardImport.boardTitleRequired`,
+            `errors.boardImport.boardTitleTooLong`,
+            `errors.board.descriptionTooLong` (reused),
+            `errors.boardImport.tasksRequired` (missing/empty tasks array),
+            `errors.boardImport.tooManyTasks` (params `{max}`, over 200),
+            `errors.boardImport.taskTitleRequired` (params `{index}`,
+            1-based), `errors.boardImport.taskTitleTooLong` (params
+            `{index}`), `errors.boardImport.taskNotesTooLong` (params
+            `{index}`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Request body exceeds 1 MB (`errors.boardImport.fileTooLarge`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /boards/{id}:
     parameters:
       - name: id
@@ -3057,6 +3134,129 @@ components:
             type: string
             format: uuid
 
+    BoardImportRequest:
+      type: object
+      description: >
+        US-037 — the parsed import file. This is the contract between the
+        (out-of-repo) Claude Skill that generates the file and this API.
+        Server-authoritative fields (visibility/status/owner/position) are
+        NOT part of this schema — anything like them present in the file is
+        ignored (AC4).
+      properties:
+        board:
+          type: object
+          properties:
+            title:
+              type: string
+              maxLength: 100
+              description: Required, non-empty after trim.
+            description:
+              type: string
+              nullable: true
+              maxLength: 2000
+            category:
+              type: string
+              nullable: true
+              description: >
+                A competency SLUG (not an id) from the `competencies`
+                dictionary. Unknown or inactive → skipped with a warning,
+                board created without a category.
+            languages:
+              type: array
+              description: >
+                Language SLUGs from the `languages` dictionary. Each unknown
+                or inactive slug is skipped with its own warning; the valid
+                ones are still saved. Missing/empty → no languages.
+              items:
+                type: string
+          required: [title]
+        tasks:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+                maxLength: 200
+                description: Required, non-empty after trim.
+              planned_minutes:
+                type: integer
+                nullable: true
+                minimum: 0
+                maximum: 9999
+                description: >
+                  US-020 bounds. 0/missing/null → no estimate (no warning).
+                  Any other invalid value → dropped to null + a warning.
+              notes:
+                type: string
+                nullable: true
+                maxLength: 2000
+              attachment:
+                type: object
+                nullable: true
+                description: >
+                  Always treated as `kind: 'note'`. Empty `body` → no
+                  attachment + a warning. `body` over 20000 chars → trimmed
+                  to 20000 + a warning. `title` over 200 chars → sliced, no
+                  warning.
+                properties:
+                  kind:
+                    type: string
+                    description: Ignored — always treated as `note`.
+                  title:
+                    type: string
+                    nullable: true
+                  body:
+                    type: string
+            required: [title]
+      required: [board, tasks]
+
+    BoardImportWarning:
+      type: object
+      description: >
+        A non-blocking note about something adjusted during import. The FE
+        renders `code` via its own locale dictionary with `params`
+        interpolated — the BE never sends formatted text, same principle as
+        an error `messageKey`.
+      properties:
+        code:
+          type: string
+          description: >
+            One of `board.import.warning.unknownCategory` /
+            `.inactiveCategory` / `.unknownLanguage` / `.inactiveLanguage`
+            (params `{slug}`), `.plannedMinutesDropped` /
+            `.attachmentSkipped` (params `{taskTitle}`), or
+            `.attachmentBodyTruncated` (params `{taskTitle, max}`).
+          example: board.import.warning.unknownCategory
+        params:
+          type: object
+          additionalProperties: true
+          description: Interpolation values for the locale string named by `code`.
+      required: [code, params]
+
+    BoardImportResult:
+      type: object
+      description: US-037 — the 201 response for `POST /boards/import`.
+      properties:
+        board:
+          $ref: '#/components/schemas/Board'
+          description: >
+            The newly created board — the exact same shape `POST /boards`
+            returns (`toBoardSummary`). `taskCount` reflects the imported
+            tasks.
+        createdTaskCount:
+          type: integer
+        createdAttachmentCount:
+          type: integer
+          description: Number of tasks that had a non-empty attachment body (≤ createdTaskCount).
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardImportWarning'
+      required: [board, createdTaskCount, createdAttachmentCount, warnings]
+
     Language:
       type: object
       description: One entry in the active languages dictionary (US-023), same shape/contract as Competency.
@@ -3706,6 +3906,15 @@ components:
             message:
               type: string
               description: English fallback for logs/devtools — not shown to end users.
+            params:
+              type: object
+              additionalProperties: true
+              description: >
+                Optional interpolation values for a parameterized
+                `messageKey` (e.g. `{index}` / `{max}` on
+                `errors.boardImport.*`, US-037). Present only for keys that
+                need it; the FE substitutes them into its own localized
+                string.
           required: [code, messageKey]
       required: [error]
 

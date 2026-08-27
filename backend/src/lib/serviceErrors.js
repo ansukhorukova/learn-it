@@ -5,10 +5,16 @@
 // looks this up in its own locale dictionary (CLAUDE.md: "код + локалізований
 // ключ повідомлення"), never rendering `message` directly.
 class ValidationError extends Error {
-  constructor(messageKey) {
+  // `params` (optional) — an object of interpolation values for a
+  // parameterized `messageKey` (e.g. `{ index: 3 }` for
+  // `errors.boardImport.taskTitleRequired`, US-037). The FE substitutes
+  // them into its own localized string; the BE never formats the text
+  // itself. Absent for the common non-parameterized case.
+  constructor(messageKey, params) {
     super(messageKey);
     this.name = 'ValidationError';
     this.messageKey = messageKey;
+    if (params && typeof params === 'object') this.params = params;
   }
 }
 

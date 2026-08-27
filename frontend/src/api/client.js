@@ -41,11 +41,15 @@ export async function fetchProviderHint(email) {
  * `message` (English-only, logs/devtools use) to the user.
  */
 export class ApiRequestError extends Error {
-  constructor(status, code, messageKey, message) {
+  constructor(status, code, messageKey, message, params) {
     super(message || messageKey);
     this.status = status;
     this.code = code;
     this.messageKey = messageKey;
+    // Present for parameterized error keys (e.g. errors.boardImport.tooManyTasks
+    // carries { max }, taskTitleRequired carries { index }) — see US-037's
+    // error envelope. The FE feeds these straight into t(messageKey, params).
+    this.params = params;
   }
 }
 
@@ -77,7 +81,13 @@ async function request(path, { method = 'GET', idToken, body, formData } = {}) {
 
   if (!res.ok) {
     const err = (payload && payload.error) || {};
-    throw new ApiRequestError(res.status, err.code || 'UNKNOWN', err.messageKey || 'errors.generic', err.message);
+    throw new ApiRequestError(
+      res.status,
+      err.code || 'UNKNOWN',
+      err.messageKey || 'errors.generic',
+      err.message,
+      err.params,
+    );
   }
   return payload;
 }
@@ -105,6 +115,18 @@ export function listPublicBoards(idToken, { categoryId, languageIds } = {}) {
 
 export function createBoard(idToken, payload) {
   return request('/boards', { method: 'POST', idToken, body: payload });
+}
+
+// POST /boards/import (US-037/US-038) — `parsedFile` is the raw, already
+// JSON-parsed contents of the user's `.json` file ({ board, tasks }), sent
+// verbatim as the request body. The FE does only a light structural check
+// (non-empty board.title, non-empty tasks array) before calling this — all
+// other validation (slugs, field lengths, the 200-task cap) is the BE's.
+// 201 → { board, createdTaskCount, createdAttachmentCount, warnings: [{ code, params }] };
+// a 4xx surfaces via ApiRequestError with a localized `messageKey` (+ `params`
+// on `errors.boardImport.*` keys that take {index}/{max}).
+export function importBoard(idToken, parsedFile) {
+  return request('/boards/import', { method: 'POST', idToken, body: parsedFile });
 }
 
 export function getBoard(idToken, boardId) {

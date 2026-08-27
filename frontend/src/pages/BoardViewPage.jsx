@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { DndContext, KeyboardSensor, PointerSensor, closestCorners, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -191,6 +191,27 @@ function BoardViewPage() {
   const { boardId } = useParams();
   const { user, loading: authLoading } = useAuthUser();
   const { t, locale } = useI18n();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // US-038 AC7/AC8: a fresh import navigates here with the import result in
+  // router state. `warnings` (if any) render as a dismissible block; an empty
+  // list just shows a short success notice. Captured into local state once so
+  // it survives the history-state cleanup below and the dismiss control.
+  const [importNotice, setImportNotice] = useState(() => {
+    const state = location.state;
+    if (!state || !('importWarnings' in state)) return null;
+    return { warnings: state.importWarnings || [], title: state.importedBoardTitle || '' };
+  });
+
+  useEffect(() => {
+    // Clear the one-shot import payload from history so a reload / back-forward
+    // doesn't resurface the notice.
+    if (location.state && 'importWarnings' in location.state) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [board, setBoard] = useState(null);
   const [columns, setColumns] = useState(emptyColumns());
@@ -540,6 +561,32 @@ function BoardViewPage() {
         {pageState === 'ready' && board?.myRole === 'public' && (
           <p className={styles.infoBanner} role="status">
             {t('sharing.publicViewerBanner')}
+          </p>
+        )}
+
+        {/* US-038 AC7: import completed with non-blocking warnings. */}
+        {importNotice && importNotice.warnings.length > 0 && (
+          <div className={styles.importWarnings} role="status">
+            <p className={styles.importWarningsHeading}>{t('board.import.warningsHeading')}</p>
+            <ul className={styles.importWarningsList}>
+              {importNotice.warnings.map((warning, index) => (
+                <li key={`${warning.code}-${index}`}>{t(warning.code, warning.params)}</li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className={styles.importWarningsDismiss}
+              onClick={() => setImportNotice(null)}
+            >
+              {t('board.import.dismissWarnings')}
+            </button>
+          </div>
+        )}
+
+        {/* US-038 AC8: import completed cleanly — brief success notice. */}
+        {importNotice && importNotice.warnings.length === 0 && (
+          <p className={styles.infoBanner} role="status">
+            {t('board.import.success', { title: importNotice.title })}
           </p>
         )}
 

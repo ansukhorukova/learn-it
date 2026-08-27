@@ -132,6 +132,27 @@
         "descriptionTooLong": "Description must be 2000 characters or fewer"
       }
     },
+    "import": {
+      "cta": "Import from file",
+      "chooseAnother": "Choose a different file",
+      "previewTitle": "Import board",
+      "previewSummary": "Import \"{title}\"?",
+      "confirm": "Import",
+      "cancel": "Cancel",
+      "importing": "Importing…",
+      "success": "Board \"{title}\" imported.",
+      "warningsHeading": "Imported with some notes:",
+      "dismissWarnings": "Dismiss",
+      "warning": {
+        "unknownCategory": "Category \"{slug}\" wasn't recognized and was skipped.",
+        "inactiveCategory": "Category \"{slug}\" is no longer available and was skipped.",
+        "unknownLanguage": "Language \"{slug}\" wasn't recognized and was skipped.",
+        "inactiveLanguage": "Language \"{slug}\" is no longer available and was skipped.",
+        "plannedMinutesDropped": "The time estimate for \"{taskTitle}\" was invalid and was left empty.",
+        "attachmentSkipped": "The note attachment for \"{taskTitle}\" was empty and was skipped.",
+        "attachmentBodyTruncated": "The note attachment for \"{taskTitle}\" was longer than {max} characters and was trimmed."
+      }
+    },
     "card": {
       "taskCount": {
         "one": "{count} task",
@@ -541,6 +562,18 @@
       "categoryInactive": "This category is no longer available to assign.",
       "visibilityInvalid": "Invalid visibility value.",
       "languageInvalid": "One of the selected languages doesn't exist or is no longer available."
+    },
+    "boardImport": {
+      "invalidJson": "This file isn't valid JSON.",
+      "invalidStructure": "This file doesn't match the expected board format.",
+      "boardTitleRequired": "The board in this file needs a title.",
+      "boardTitleTooLong": "The board title must be 100 characters or fewer.",
+      "tasksRequired": "This file needs at least one task.",
+      "tooManyTasks": "A single import can include at most {max} tasks.",
+      "taskTitleRequired": "Task #{index} in this file is missing a title.",
+      "taskTitleTooLong": "Task #{index}: title must be 200 characters or fewer.",
+      "taskNotesTooLong": "Task #{index}: description must be 2000 characters or fewer.",
+      "fileTooLarge": "This file is too large to import."
     },
     "task": {
       "notFound": "Task not found.",

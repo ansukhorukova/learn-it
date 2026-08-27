@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 
 import { useAuthUser } from '../auth/useAuthUser';
 import { useI18n } from '../i18n/I18nProvider';
@@ -17,6 +17,7 @@ import {
 import { BOARD_ACCENTS, DEFAULT_BOARD_ACCENT } from '../constants/boardAccents';
 import AppHeader from '../components/AppHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
+import ImportBoardModal from '../components/ImportBoardModal';
 import styles from './BoardsPage.module.css';
 
 const TITLE_MAX_LENGTH = 100;
@@ -84,6 +85,7 @@ function CategoryFilter({ value, onChange, categoryCatalog, t, idPrefix }) {
 function BoardsPage() {
   const { user, loading: authLoading } = useAuthUser();
   const { t } = useI18n();
+  const navigate = useNavigate();
 
   useHeadMeta({ title: t('board.overview.title'), description: t('board.overview.description') });
 
@@ -188,6 +190,25 @@ function BoardsPage() {
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // US-038: the "Import from file" modal, owner-context only (rendered next to
+  // "Create board", never in the "Public Boards" section).
+  const [importOpen, setImportOpen] = useState(false);
+
+  // On a 201 the new board isn't stitched into local state here — we navigate
+  // straight to it and BoardsPage remounts (and re-fetches "Мої дошки") when
+  // the user returns, so the grid shows the new board without a manual reload
+  // (US-038 AC10, same net effect as US-002 AC3's optimistic append). The
+  // warnings / success notice travel to the board page via router state.
+  function handleImported(result) {
+    setImportOpen(false);
+    navigate(`/boards/${result.board.id}`, {
+      state: {
+        importWarnings: result.warnings || [],
+        importedBoardTitle: result.board.title,
+      },
+    });
+  }
 
   if (authLoading) return null;
   if (!user) return <Navigate to="/auth" replace />;
@@ -309,9 +330,14 @@ function BoardsPage() {
       <main className={styles.main}>
         <div className={styles.headerRow}>
           <h1>{t('board.overview.heading')}</h1>
-          <button type="button" className={styles.createButton} onClick={() => setCreating((v) => !v)}>
-            {t('board.create.cta')}
-          </button>
+          <div className={styles.headerActions}>
+            <button type="button" className={styles.importButton} onClick={() => setImportOpen(true)}>
+              {t('board.import.cta')}
+            </button>
+            <button type="button" className={styles.createButton} onClick={() => setCreating((v) => !v)}>
+              {t('board.create.cta')}
+            </button>
+          </div>
         </div>
 
         {creating && (
@@ -656,6 +682,10 @@ function BoardsPage() {
           )}
         </div>
       </main>
+
+      {importOpen && user && (
+        <ImportBoardModal user={user} onClose={() => setImportOpen(false)} onImported={handleImported} />
+      )}
 
       {deleteTarget && (
         <ConfirmDialog

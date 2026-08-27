@@ -50,6 +50,8 @@
 | US-034 | Відповіді на коментарі таски (3 рівні вкладеності, flatten) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_TaskPanel, BE_TaskComments, DB_TaskComments |
 | US-035 | Відповідь (quote-style) на повідомлення в чаті (DM + компетенція) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Chat, FE_ChatConversation, BE_DmThreads, BE_CompetencyChat, DB_DmMessages, DB_CompetencyChatMessages, Infra_WebSocket |
 | US-036 | Форвард повідомлень (лише з чату компетенції, заборонено з DM) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Chat, FE_ChatConversation, FE_ForwardMessageModal, BE_ChatForwards, BE_DmThreads, BE_CompetencyChat, DB_DmMessages, DB_CompetencyChatMessages |
+| US-037 | Імпорт дошки з файлу: транзакційне створення на бекенді | 🔧 У розробці | 2026-08-27 | FE_Boards, BE_BoardImport, BE_Boards, BE_Competencies, BE_Languages, DB_Boards, DB_Tasks, DB_Attachments |
+| US-038 | Імпорт дошки з файлу: точка входу і клієнтський флоу | 🔧 У розробці | 2026-08-27 | FE_BoardImport, FE_Boards, BE_BoardImport |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
@@ -1492,4 +1494,130 @@ CLAUDE.md (текстові зміни підготовлені, файл не �
 
 ## Відповідність scope
 Виходить за межі початкового CLAUDE.md — форварду не існувало. Свідоме розширення US-027/US-028, узгоджене з рішенням користувача (форвард дозволений у будь-який чат-призначення, заборона стосується лише джерела-DM; призначення-компетенція не вимагає мембершипу, за прецедентом US-031 AC4). Приватність DM залишається абсолютною і посилюється транзитивно (AC7) — жодного ослаблення гарантій розділу "Шеринг"/US-027.
+```
+
+**US-037…US-038 — походження.** Запит користувача: імпорт дошки з файлу (книжка → board + tasks). Окремий Claude Skill поза цим репозиторієм генерує JSON-файл з книжки/матеріалу — один борд + список тасок, кожна опційно з `planned_minutes` і одним note-вкладенням (повний текст розділу). Потрібна функція застосунку, яка приймає такий файл і створює всю структуру одним запитом. Схема вхідного файлу — контракт між Skill і застосунком, зафіксований тут:
+
+**Рішення користувача 2026-08-27 (правка AC9):** перевищення 20000 символів у `tasks[i].attachment.body` більше НЕ критична помилка. Замість 400 `errors.boardImport.attachmentBodyTooLong` тіло обрізається (trim + slice до 20000) і додається НЕ-критичний warning `board.import.warning.attachmentBodyTruncated`. Ключ `errors.boardImport.attachmentBodyTooLong` вилучено. Константа 20000 лишається окремою від ручного `NOTE_BODY_MAX_LENGTH=2000`.
+
+```
+{ "board": { "title": "string", "description": "string?", "category": "competency-slug?", "languages": ["uk"] },
+  "tasks": [ { "title": "string", "planned_minutes": number?, "notes": "string?",
+              "attachment": { "kind": "note", "title": "string?", "body": "string" } } ] }
+```
+
+Архітектурні рішення, ухвалені business-analyst без повторного уточнення в користувача (за прецедентом US-021…024 / US-030…033):
+
+1. **Окремий ендпоінт `POST /api/v1/boards/import`**, не розширення `POST /boards` — інша форма тіла (вкладені board+tasks+attachments), інша відповідь (борд + лічильники + warnings), транзакційне створення кількох сутностей. Top-level ресурс-дія, той самий патерн, що `POST /api/v1/chat/forwards` (US-036).
+2. **Тіло — `application/json`** (розпарсований вміст файлу), НЕ multipart. FE читає файл (`FileReader` + `JSON.parse`) і надсилає JSON. Причина: payload уже є JSON; multipart/multer тут — зайвий шар без вигоди. Ліміт розміру тіла для цього роуту — 1 МБ (200 тасок × ~4 КБ тексту ≈ 800 КБ у найгіршому випадку).
+3. **Невідомий/неактивний `category` чи `languages` slug — не критична помилка:** ігнорується, борд створюється без нього, у відповідь додається `warning`. Той самий принцип "перевіряється лише те, що активно призначається зараз" (US-021 AC6).
+4. **Ліміт кількості тасок — 200 за один імпорт** (перевищення — критична помилка; порційний/чанкований імпорт поза scope цього проходу).
+5. **Довжина тіла note-вкладення при імпорті — до 20000 символів**, окремо від ручного ліміту `NOTE_BODY_MAX_LENGTH`=2000 (`attachments.service.js`), який лишається без змін. Причина: вкладення при імпорті — "повний текст розділу" книжки, структурно довший за нотатку, набрану вручну в task panel. **Правка 2026-08-27 (рішення користувача):** перевищення 20000 — НЕ критична помилка; тіло обрізається (trim + slice) і додається НЕ-критичний warning `board.import.warning.attachmentBodyTruncated`.
+6. **Серверні поля не читаються з файлу:** `visibility` нового борду завжди `private` незалежно від вмісту файлу; `owner_id`/`created_by` — поточний користувач; статус усіх тасок — `planned`; `position` — за порядком у файлі, крок 1000 (наявна gap-схема `tasks.service.js`); `accent` — за замовчуванням.
+7. **Валідація повністю авторитетна на BE.** FE робить лише легку перевірку до відправки (файл парситься; є непорожній `board.title`; `tasks` — непорожній масив) для миттєвого фідбеку, з тими самими локалізованими ключами.
+8. **`planned_minutes` — межі US-020** (ціле 0–9999; 0 = "не задано"). Некоректне значення — `warning` + таска створюється без оцінки, не критична помилка (опційна метадані).
+9. **Без міграції БД** — реюз `boards` / `tasks` / `attachments` як є, без нових колонок чи таблиць.
+
+CLAUDE.md (текстові зміни підготовлені, файл не редагується цим проходом — за аналогією з прецедентом US-021…024 / US-030…033):
+- Розділ **"API"**: додати `POST /boards/import` до переліку ендпоінтів як top-level ресурс-дію (поряд з `/tasks/:id/shares`, `chat/forwards`).
+- Розділ **"Екрани" п.2 "Boards overview"**: у секції "Мої дошки" поряд зі "Створити борд" — дія "Імпортувати з файлу" (будь-який автентифікований користувач створює власний борд); коротко описати флоу (вибір `.json` → прев'ю назви й кількості тасок → створення однією транзакцією → перехід на новий борд, warnings показуються після успіху).
+- Розділ **"Поведінка"**: додати, що імпорт створює борд + усі таски (`planned`) + усі note-вкладення (`visibility=private`) в одній транзакції — часткового імпорту не буває; контракт вхідного файлу — у записі US-037…US-038 в `USER_STORIES.md`.
+- Розділ **"Дані"**: без змін (явно зазначити — фіча не додає таблиць чи колонок).
+
+### US-037 — Імпорт дошки з файлу: транзакційне створення на бекенді
+
+```
+## User Story
+Як власник борду (будь-який автентифікований користувач), я хочу надіслати згенерований JSON-файл із книжки й отримати готовий борд з усіма тасками та їхніми нотатками одним запитом, щоб не створювати десятки карток вручну.
+
+## Acceptance Criteria
+1. Given автентифікований запит `POST /api/v1/boards/import` з тілом = розпарсований вміст файлу за схемою (`{board, tasks}`), When усі обов'язкові поля валідні, Then BE в ОДНІЙ транзакції створює: рядок `boards` (`owner_id`=я, `visibility='private'`, `accent` за замовчуванням, `category_id`/`board_languages` — з резолвлених slug-ів), по рядку `tasks` на кожен елемент `tasks[]` (`status='planned'`, `position`=(індекс+1)*1000 у порядку файлу, `created_by`=я), і по рядку `attachments` (`kind='note'`, `visibility='private'`, `created_by`=я) на кожну таску з непорожнім `attachment.body`; 201.
+2. Given успіх, Then тіло відповіді = `{ board: <той самий shape, що POST /api/v1/boards>, createdTaskCount, createdAttachmentCount, warnings: [] }`.
+3. Given будь-яка критична помилка валідації (AC5–AC14), When обробка запиту, Then НІ борд, НІ таски, НІ вкладення не створюються — уся валідація виконується ДО відкриття транзакції (той самий патерн, що `resolveCategoryId`/`resolveLanguages` у `createBoard`); відповідь 4xx з локалізованим `messageKey`, транзакція не стартує.
+4. Given `visibility` / `status` / `owner_id` / `created_by` присутні у файлі, Then вони ІГНОРУЮТЬСЯ й визначаються сервером: борд завжди `private`, усі таски завжди `planned`, власник — завжди викликач.
+5. Given тіло не є об'єктом зі структурою `{board: object, tasks: array}`, Then 400 `errors.boardImport.invalidStructure`; для повністю нечитабельного JSON, якщо він доходить до сервісного шару, — 400 `errors.boardImport.invalidJson`.
+6. Given `board.title` відсутній, порожній або не рядок (після trim), Then 400 `errors.boardImport.boardTitleRequired`. Given `board.title` > 100 символів, Then 400 `errors.boardImport.boardTitleTooLong`. Given `board.description` > 2000 символів, Then 400 `errors.board.descriptionTooLong` (реюз наявного ключа); порожній/відсутній опис → `null`.
+7. Given `tasks` — не масив або порожній масив, Then 400 `errors.boardImport.tasksRequired`. Given `tasks` містить понад 200 елементів, Then 400 `errors.boardImport.tooManyTasks` (`{max: 200}`).
+8. Given елемент `tasks[i]` без валідного `title` (порожній/не рядок після trim), Then 400 `errors.boardImport.taskTitleRequired` (`{index: i+1}`, 1-based). Given `tasks[i].title` > 200 символів, Then 400 `errors.boardImport.taskTitleTooLong` (`{index: i+1}`). Given `tasks[i].notes` > 2000 символів, Then 400 `errors.boardImport.taskNotesTooLong` (`{index: i+1}`); порожній/відсутній `notes` → `null`.
+9. Given `tasks[i].attachment.body` присутній і після trim > 20000 символів, Then тіло обрізається до 20000 (trim + slice), вкладення все одно створюється, і додається НЕ-критичний warning `board.import.warning.attachmentBodyTruncated` (`{taskTitle, max: 20000}`). 20000 — окрема константа, вища за ручний `NOTE_BODY_MAX_LENGTH`=2000 (`attachments.service.js` не чіпається), бо імпортоване вкладення — повний текст розділу. (Правка 2026-08-27, рішення користувача: раніше — критична помилка `errors.boardImport.attachmentBodyTooLong`, ключ вилучено.)
+10. Given `tasks[i].attachment` присутній, але `body` порожній/відсутній після trim, Then вкладення НЕ створюється, додається warning `board.import.warning.attachmentSkipped` (`{taskTitle}`), решта імпорту не блокується. Given `attachment.kind` ≠ `"note"`, Then поле `kind` ігнорується (за схемою завжди `note`), вкладення трактується як нотатка. Given `attachment` відсутній, Then у таски просто немає вкладення.
+11. Given `board.category` — slug, якого немає в `competencies`, АБО він `is_active=false`, Then категорія НЕ призначається, борд створюється без `category_id`, додається warning `board.import.warning.unknownCategory` / `board.import.warning.inactiveCategory` (`{slug}`) — не критична помилка. Given `board.category` відсутній/null/порожній, Then борд без категорії, без warning.
+12. Given `board.languages` містить slug, якого немає в `languages`, АБО неактивний, Then цей slug пропускається (решта валідних мов зберігається в `board_languages`), warning `board.import.warning.unknownLanguage` / `board.import.warning.inactiveLanguage` (`{slug}`) на кожен пропущений — не критична помилка. Given `board.languages` відсутній/порожній/не масив, Then борд без мов, без warning.
+13. Given `tasks[i].planned_minutes` присутній, але не ціле в діапазоні 0–9999 (реюз меж US-020), Then таска створюється з `planned_minutes = NULL`, додається warning `board.import.warning.plannedMinutesDropped` (`{taskTitle}`) — не критична помилка. Given `planned_minutes` відсутній/null/0, Then `planned_minutes = NULL` без warning (0 = "оцінка не задана", той самий підхід, що US-020 AC3).
+14. Given `tasks[i].attachment.title` присутній і > 200 символів, Then обрізається до 200 (trim + slice), без warning; відсутній `attachment.title` → вкладення без заголовка (note-чіп рендериться з тіла, US-009).
+15. Given розмір тіла запиту перевищує 1 МБ, Then 413 або 400 `errors.boardImport.fileTooLarge` (ліміт задається на JSON-парсері саме цього роуту, не глобально).
+16. Given неавтентифікований запит, Then 401 (той самий `requireAuth`, що всі `/api/v1/boards/*`); авторизаційних перевірок ролей немає — створюється власний борд викликача, як і `POST /boards`.
+17. Given warnings зібрані під час імпорту, Then вони НЕ блокують створення — відповідь завжди 201; `warnings` — масив об'єктів `{ code: <locale-ключ>, params: <об'єкт> }`, які FE рендерить через власний словник (той самий принцип, що локалізовані `messageKey` помилок — BE не віддає готовий текст).
+18. Given `openapi.yaml`, Then новий шлях `POST /api/v1/boards/import` задокументовано разом з реалізацією: схема вхідного тіла, відповідь із `warnings`, усі критичні `messageKey`.
+
+## API-поверхня
+- Новий ендпоінт `POST /api/v1/boards/import` (top-level ресурс-дія, за прецедентом `POST /api/v1/chat/forwards`, US-036). Тіло — `application/json` за схемою вхідного файлу. Відповідь 201 `{board, createdTaskCount, createdAttachmentCount, warnings[]}`.
+- Реюз довідників `competencies` (lookup за `slug`) і `languages` (lookup за `slug`) для резолву slug→id — нових read-ендпоінтів не потрібно.
+- Реюз наявних таблиць `boards` / `tasks` / `attachments` без змін схеми — **міграція БД не потрібна**.
+- Реюз `boardsService.toBoardSummary` для об'єкта `board` у відповіді; `visibility: 'private'` на вкладеннях — той самий інваріант, що `insertAttachment` (spread після patch).
+
+## Локалізація
+Критичні помилки (BE `messageKey`, потрібні в `locales/en.json` + `locales/uk.json`):
+- `errors.boardImport.invalidJson` — en: "This file isn't valid JSON.", uk: "Цей файл не є коректним JSON."
+- `errors.boardImport.invalidStructure` — en: "This file doesn't match the expected board format.", uk: "Структура файлу не відповідає очікуваному формату дошки."
+- `errors.boardImport.boardTitleRequired` — en: "The board in this file needs a title.", uk: "Дошка у файлі має містити назву."
+- `errors.boardImport.boardTitleTooLong` — en: "The board title must be 100 characters or fewer.", uk: "Назва дошки має містити не більше 100 символів."
+- `errors.boardImport.tasksRequired` — en: "This file needs at least one task.", uk: "Файл має містити принаймні одну таску."
+- `errors.boardImport.tooManyTasks` (параметризований `{max}`) — en: "A single import can include at most {max} tasks.", uk: "За один імпорт можна створити не більше {max} тасок."
+- `errors.boardImport.taskTitleRequired` (параметризований `{index}`) — en: "Task #{index} in this file is missing a title.", uk: "Таска №{index} у файлі не має назви."
+- `errors.boardImport.taskTitleTooLong` (параметризований `{index}`) — en: "Task #{index}: title must be 200 characters or fewer.", uk: "Таска №{index}: назва має містити не більше 200 символів."
+- `errors.boardImport.taskNotesTooLong` (параметризований `{index}`) — en: "Task #{index}: description must be 2000 characters or fewer.", uk: "Таска №{index}: опис має містити не більше 2000 символів."
+- `errors.boardImport.fileTooLarge` — en: "This file is too large to import.", uk: "Файл завеликий для імпорту."
+- Реюз наявного: `errors.board.descriptionTooLong`.
+
+Warnings (не помилки — теж потрібні в обох словниках):
+- `board.import.warning.unknownCategory` (параметризований `{slug}`) — en: "Category \"{slug}\" wasn't recognized and was skipped.", uk: "Категорію «{slug}» не розпізнано — пропущено."
+- `board.import.warning.inactiveCategory` (параметризований `{slug}`) — en: "Category \"{slug}\" is no longer available and was skipped.", uk: "Категорія «{slug}» більше недоступна — пропущено."
+- `board.import.warning.unknownLanguage` (параметризований `{slug}`) — en: "Language \"{slug}\" wasn't recognized and was skipped.", uk: "Мову «{slug}» не розпізнано — пропущено."
+- `board.import.warning.inactiveLanguage` (параметризований `{slug}`) — en: "Language \"{slug}\" is no longer available and was skipped.", uk: "Мова «{slug}» більше недоступна — пропущено."
+- `board.import.warning.plannedMinutesDropped` (параметризований `{taskTitle}`) — en: "The time estimate for \"{taskTitle}\" was invalid and was left empty.", uk: "Оцінку часу для «{taskTitle}» вказано некоректно — залишено порожньою."
+- `board.import.warning.attachmentSkipped` (параметризований `{taskTitle}`) — en: "The note attachment for \"{taskTitle}\" was empty and was skipped.", uk: "Порожнє вкладення-нотатку для «{taskTitle}» пропущено."
+- `board.import.warning.attachmentBodyTruncated` (параметризований `{taskTitle, max}`) — en: "The note attachment for \"{taskTitle}\" was longer than {max} characters and was trimmed.", uk: "Вкладення-нотатку для «{taskTitle}» скорочено до {max} символів."
+
+## Відповідність scope
+В межах — імпорт це bulk-створення поверх уже наявних примітивів (`boards` / `tasks` / note-`attachments`), усі описані в CLAUDE.md ("Дані" / "Екрани" / "Поведінка"). Розділ "Поза межами цього етапу" (публічні посилання для незареєстрованих, нотифікації та email-запрошення, синхронізація з календарем, графіки складніші за прості тотали, CI/CD, chat-розширення) імпорту не стосується. Фіча НЕ додає моделі даних, авторизаційного правила чи зовнішньої інтеграції — Claude Skill, що генерує файл, поза цим репозиторієм, застосунок лише приймає зафіксований JSON-контракт. Додає новий ендпоінт і точку входу, не описані в CLAUDE.md раніше → підготовлені текстові зміни (розділи "API", "Екрани" п.2, "Поведінка") — у записі US-037…US-038 вище; свідоме, задокументоване розширення, узгоджене з "API-first" і наявним CRUD. Відкритий пункт щодо ліміту тіла note-вкладення 20000 символів (AC9) закрито рішенням користувача 2026-08-27: 20000 лишається, але перевищення веде до тихого обрізання з warning, а не критичної помилки.
+```
+
+### US-038 — Імпорт дошки з файлу: точка входу і клієнтський флоу
+
+```
+## User Story
+Як власник борду, я хочу натиснути "Імпортувати з файлу" на сторінці своїх дошок, обрати згенерований JSON і побачити новий борд, щоб швидко перенести структуру з книжки без ручного введення.
+
+## Acceptance Criteria
+1. Given я на Boards overview у секції "Мої дошки", Then поряд з кнопкою "Створити борд" бачу кнопку "Імпортувати з файлу" (`board.import.cta`); у секції "Public Boards" цієї кнопки немає.
+2. Given я тисну "Імпортувати з файлу", Then відкривається нативний вибір файлу з `accept="application/json,.json"`.
+3. Given я обрав файл, When FE читає його (`FileReader`) і `JSON.parse` кидає помилку, Then показується інлайн-помилка `errors.boardImport.invalidJson`, запит на BE не надсилається.
+4. Given файл розпарсився, When легка структурна перевірка на FE не проходить — немає непорожнього рядка `board.title` → `errors.boardImport.boardTitleRequired`; `tasks` не масив або порожній → `errors.boardImport.tasksRequired` — Then показується відповідна інлайн-помилка, запит не надсилається. Будь-яка інша валідація (slug-и, довжини полів, ліміт 200 тасок) — тільки на BE, FE на них не блокує й не дублює логіку.
+5. Given структурна перевірка пройшла, Then показується прев'ю-крок: назва борду з файлу (`board.import.previewSummary` з `{title}`) + кількість тасок (`board.card.taskCount`, ICU-плюрал), кнопки "Імпортувати" (`board.import.confirm`) і "Скасувати" (`board.import.cancel`).
+6. Given я підтвердив, When FE надсилає `POST /api/v1/boards/import` з розпарсованим JSON як тілом, Then кнопка показує стан завантаження (`board.import.importing`) і задизейблена до відповіді.
+7. Given відповідь 201, Then FE переходить на `/boards/$boardId` нового борду; якщо `warnings` непорожній — показується дисмісабельний блок `board.import.warningsHeading` зі списком, де кожен рядок — `t(warning.code, warning.params)`, з кнопкою "Сховати" (`board.import.dismissWarnings`).
+8. Given відповідь 201 з порожнім `warnings`, Then перехід на новий борд без блоку зауважень; опційно короткий тост `board.import.success` з `{title}`.
+9. Given відповідь 4xx, Then показується інлайн-помилка з `error.messageKey` через словник FE, борд не створюється, я лишаюся на Boards overview і можу обрати інший файл.
+10. Given імпорт успішний, Then сітка "Мої дошки" містить новий борд при поверненні на overview без ручного перезавантаження (той самий патерн, що US-002 AC3).
+11. Given нові UI-рядки, Then вони присутні в `locales/en.json` і `locales/uk.json` (двомовність — частина Definition of Done).
+
+## API-поверхня
+- Споживає новий `POST /api/v1/boards/import` (US-037) — нових ендпоінтів FE не додає.
+
+## Локалізація
+- `board.import.cta` — en: "Import from file", uk: "Імпортувати з файлу"
+- `board.import.chooseAnother` — en: "Choose a different file", uk: "Обрати інший файл"
+- `board.import.previewTitle` — en: "Import board", uk: "Імпорт дошки"
+- `board.import.previewSummary` (параметризований `{title}`) — en: "Import \"{title}\"?", uk: "Імпортувати «{title}»?"
+- `board.import.confirm` — en: "Import", uk: "Імпортувати"
+- `board.import.cancel` — en: "Cancel", uk: "Скасувати"
+- `board.import.importing` — en: "Importing…", uk: "Імпортування…"
+- `board.import.success` (параметризований `{title}`) — en: "Board \"{title}\" imported.", uk: "Дошку «{title}» імпортовано."
+- `board.import.warningsHeading` — en: "Imported with some notes:", uk: "Імпортовано із зауваженнями:"
+- `board.import.dismissWarnings` — en: "Dismiss", uk: "Сховати"
+- Warning-рядки `board.import.warning.*` і критичні `errors.boardImport.*` — визначені в US-037, спільні для обох stories.
+
+## Відповідність scope
+В межах — точка входу на вже наявному екрані Boards overview, той самий owner-контекст, що "Створити борд". Не суперечить розділу "Поза межами цього етапу". Текстова зміна до CLAUDE.md "Екрани" п.2 — у записі US-037…US-038 вище.
 ```
