@@ -191,6 +191,9 @@
     "card": {
       "statusLabel": "Status"
     },
+    "publicProgress": {
+      "hint": "Task statuses on this board are yours alone — the owner doesn't see them."
+    },
     "error": {
       "forbiddenTitle": "You don't have access to this board",
       "forbiddenBody": "This board belongs to another user. If you think this is a mistake, ask the owner to share it with you.",
@@ -529,7 +532,7 @@
     "spanish": "Spanish"
   },
   "sharing": {
-    "publicViewerBanner": "This is a public board — you have view-only access."
+    "publicViewerBanner": "This is a public board — your task progress and timers are your own. You can move tasks and add comments, but you can't change the board itself."
   },
   "errors": {
     "auth": {
@@ -587,7 +590,8 @@
       "invalidStatus": "Invalid task status.",
       "positionConflict": "This board changed while you were working. Please try again.",
       "plannedMinutesInvalid": "Enter a valid estimate (0–59 minutes, whole numbers).",
-      "plannedMinutesTooLarge": "Estimate can't exceed 9999 minutes (~166 hours)."
+      "plannedMinutesTooLarge": "Estimate can't exceed 9999 minutes (~166 hours).",
+      "personalStatusNotApplicable": "Personal progress only applies when you're viewing a public board you're not a member of."
     },
     "share": {
       "invalidRole": "Choose a valid role.",

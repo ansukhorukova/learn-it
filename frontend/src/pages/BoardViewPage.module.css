@@ -93,6 +93,14 @@
   margin-bottom: var(--space-4);
 }
 
+/* US-040 AC1: sits inside .infoBanner for a public visitor — explains that
+   the task statuses they move are a private, personal overlay. */
+.publicViewerHint {
+  margin-top: var(--space-2);
+  font-size: 0.8125rem;
+  opacity: 0.85;
+}
+
 /* US-038 AC7: dismissible non-blocking notes from a board import. Neutral
    surface like .infoBanner — the import succeeded, these are just notes. */
 .importWarnings {

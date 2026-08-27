@@ -9,6 +9,7 @@ const attachmentsService = require('../services/attachments.service');
 const timeEntriesService = require('../services/timeEntries.service');
 const taskSharesService = require('../services/taskShares.service');
 const taskCommentsService = require('../services/taskComments.service');
+const taskPersonalStatusService = require('../services/taskPersonalStatus.service');
 
 const router = express.Router();
 
@@ -73,6 +74,27 @@ router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const task = await tasksService.updateTask(req.params.id, req.firebaseUser.uid, req.body || {});
     res.json(task);
+  } catch (err) {
+    sendServiceError(res, err);
+  }
+});
+
+// PUT /api/v1/tasks/:id/my-status — set the caller's PERSONAL status for a
+// task (US-039). Allowed ONLY for an effective role of `public` (an
+// authenticated visitor of a public board with no real membership) — a
+// caller with any real membership gets 403
+// `errors.task.personalStatusNotApplicable` (they move the shared status via
+// PATCH /tasks/:id; a real viewer is read-only on it). Idempotent, race-safe
+// upsert of `task_personal_status` keyed by (task_id, user_id). This never
+// touches `tasks.status` (the shared state) — see taskPersonalStatus.service.
+router.put('/:id/my-status', requireAuth, async (req, res) => {
+  try {
+    const result = await taskPersonalStatusService.setMyStatus(
+      req.params.id,
+      req.firebaseUser.uid,
+      req.body || {},
+    );
+    res.json(result);
   } catch (err) {
     sendServiceError(res, err);
   }
@@ -285,10 +307,11 @@ router.get('/:id/comments', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/v1/tasks/:id/comments — create a comment (US-019). Owner/
-// collaborator only — a viewer gets 403 errors.task.readOnlyAccess, no
-// access at all gets 403 errors.task.forbidden (same gate as PATCH
-// /tasks/:id). No PATCH/DELETE for a comment in this pass (MVP scope).
+// POST /api/v1/tasks/:id/comments — create a comment (US-019, gate widened
+// by US-039). Owner / collaborator / `public` (a public-board visitor with
+// no real membership) may post — a REAL `board_members`/`task_shares` viewer
+// still gets 403 errors.task.readOnlyAccess, and no access at all still gets
+// 403 errors.task.forbidden. No PATCH/DELETE for a comment in this pass.
 router.post('/:id/comments', requireAuth, async (req, res) => {
   try {
     const comment = await taskCommentsService.createComment(req.params.id, req.firebaseUser.uid, req.body || {});

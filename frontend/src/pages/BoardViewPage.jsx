@@ -17,6 +17,7 @@ import {
   listCompetencyCatalog,
   listTasks,
   removeBoardMember,
+  setMyTaskStatus,
   updateBoardMemberRole,
   updateTask,
 } from '../api/client';
@@ -69,11 +70,17 @@ function groupByStatus(tasks) {
 // pointer/keyboard sensors for this one card, so a viewer's card simply
 // doesn't respond to drag input rather than allowing a drag that would only
 // fail server-side on drop.
+// US-040: a public-board visitor (task.myRole === 'public' — no real
+// membership) CAN drag/change status, but that move writes a PERSONAL status
+// overlay (PUT /tasks/:id/my-status), never the shared task. `canMoveStatus`
+// covers that case; `editable` (canWrite, excludes 'public') still gates
+// delete and every other write control.
 function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
   const editable = canWrite(task.myRole);
+  const canMoveStatus = editable || task.myRole === 'public';
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
-    disabled: !editable,
+    disabled: !canMoveStatus,
   });
 
   const style = {
@@ -84,7 +91,7 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
 
   return (
     <li ref={setNodeRef} style={style} className={styles.card}>
-      <div className={styles.cardHandle} {...(editable ? attributes : {})} {...(editable ? listeners : {})}>
+      <div className={styles.cardHandle} {...(canMoveStatus ? attributes : {})} {...(canMoveStatus ? listeners : {})}>
         <span className={styles.cardTitle}>{task.title}</span>
         <div className={styles.cardBadges}>
           {task.attachmentCount > 0 && (
@@ -111,7 +118,7 @@ function TaskCard({ task, columnLabels, onDelete, onStatusChange, onOpen, t }) {
           id={`task-status-${task.id}`}
           className={styles.statusSelect}
           value={task.status}
-          disabled={!editable}
+          disabled={!canMoveStatus}
           onChange={(event) => onStatusChange(task, event.target.value)}
         >
           {COLUMNS.map((col) => (
@@ -343,6 +350,28 @@ function BoardViewPage() {
       }
     }
 
+    // US-040: a public-board visitor's move writes a PERSONAL status overlay,
+    // not the shared task. `position` on a public board stays shared, so an
+    // in-column reorder (same origin & destination column) is a visual-only
+    // change that isn't persisted — it reverts to the owner's order on reload
+    // (AC4). Only a cross-column move persists, via PUT /tasks/:id/my-status.
+    const draggedTask = items.find((task) => task.id === active.id);
+    const originContainer = snapshot
+      ? Object.keys(snapshot).find((key) => snapshot[key].some((task) => task.id === active.id))
+      : null;
+
+    if (draggedTask?.myRole === 'public') {
+      if (finalContainer === originContainer) return;
+      try {
+        const idToken = await user.getIdToken();
+        await setMyTaskStatus(idToken, active.id, finalContainer);
+      } catch (err) {
+        if (snapshot) setColumns(snapshot);
+        setBannerErrorKey(err.messageKey || 'errors.generic');
+      }
+      return;
+    }
+
     try {
       const idToken = await user.getIdToken();
       await updateTask(idToken, active.id, { status: finalContainer, position: finalIndex });
@@ -369,7 +398,12 @@ function BoardViewPage() {
 
     try {
       const idToken = await user.getIdToken();
-      await updateTask(idToken, task.id, { status: newStatus, position: targetLength });
+      if (task.myRole === 'public') {
+        // US-040: personal status overlay only — never the shared task.
+        await setMyTaskStatus(idToken, task.id, newStatus);
+      } else {
+        await updateTask(idToken, task.id, { status: newStatus, position: targetLength });
+      }
     } catch (err) {
       setColumns(snapshot);
       setBannerErrorKey(err.messageKey || 'errors.generic');
@@ -554,14 +588,17 @@ function BoardViewPage() {
           )}
         </div>
 
-        {/* US-022 AC3: read-only visitor via board visibility=public, not a
-            real board_members/task_shares grant — same read-only UI gate as
-            a viewer (canWrite(myRole) already excludes 'public' below), plus
-            this dedicated banner explaining why. */}
+        {/* US-022 / US-040: visitor via board visibility=public, not a real
+            board_members/task_shares grant. The board itself stays read-only
+            (canWrite(myRole) excludes 'public'), but the visitor CAN move
+            task cards (personal status overlay) and add comments — the banner
+            explains that, and the hint spells out that the statuses are
+            private to them. */}
         {pageState === 'ready' && board?.myRole === 'public' && (
-          <p className={styles.infoBanner} role="status">
-            {t('sharing.publicViewerBanner')}
-          </p>
+          <div className={styles.infoBanner} role="status">
+            <p>{t('sharing.publicViewerBanner')}</p>
+            <p className={styles.publicViewerHint}>{t('boardView.publicProgress.hint')}</p>
+          </div>
         )}
 
         {/* US-038 AC7: import completed with non-blocking warnings. */}

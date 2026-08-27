@@ -4,6 +4,7 @@ const { requireBoardRole, requireTaskRole, higherRole } = require('../lib/authz'
 const { isUniqueViolation, isDeadlock } = require('../lib/dbErrors');
 const { lockRow, lockedUpdate } = require('../lib/db');
 const storage = require('../lib/storage');
+const personalStatus = require('./taskPersonalStatus.service');
 
 const TITLE_MAX_LENGTH = 200;
 const NOTES_MAX_LENGTH = 2000;
@@ -132,6 +133,14 @@ async function getOwnedTaskWithBoard(taskId, ownerId, { minRole = 'viewer' } = {
 // can read.
 async function getTaskForUser(taskId, userId) {
   const row = await getOwnedTaskWithBoard(taskId, userId);
+  // US-039 AC3/AC4: a public-board visitor with no real membership
+  // (effective role `public`) gets their OWN personal `status` overlay
+  // (fallback 'planned'), never the owner's shared `tasks.status`. Every
+  // real role resolves `tasks.status` unchanged.
+  if (row.myRole === 'public') {
+    const mine = await personalStatus.getPersonalStatus(taskId, userId);
+    return toTask({ ...row, status: mine || personalStatus.DEFAULT_STATUS });
+  }
   return toTask(row);
 }
 
@@ -169,9 +178,28 @@ async function listTasksForBoard(boardId, ownerId) {
     : [];
   const shareRoleByTaskId = new Map(shareRows.map((row) => [row.task_id, row.role]));
 
-  const tasks = rows.map((row) =>
-    toTask({ ...row, myRole: higherRole(boardRole, shareRoleByTaskId.get(row.id) || null) }),
-  );
+  const withRoles = rows.map((row) => ({
+    row,
+    effectiveRole: higherRole(boardRole, shareRoleByTaskId.get(row.id) || null),
+  }));
+
+  // US-039 AC2/AC4/AC5: for every task whose effective role is `public`
+  // (public board, no real membership on this specific task), the caller's
+  // `status` is their OWN personal overlay (fallback 'planned'), not the
+  // shared `tasks.status`. A task on the same board where this caller DOES
+  // have a real `task_shares` role (effectiveRole !== 'public') keeps the
+  // shared status — the mixed state AC5 describes. The route's
+  // `columnTotals` then sum by this resolved status (AC12).
+  const publicTaskIds = withRoles.filter((x) => x.effectiveRole === 'public').map((x) => x.row.id);
+  const personalStatusByTaskId = await personalStatus.getPersonalStatuses(publicTaskIds, ownerId);
+
+  const tasks = withRoles.map(({ row, effectiveRole }) => {
+    const status =
+      effectiveRole === 'public'
+        ? personalStatusByTaskId.get(row.id) || personalStatus.DEFAULT_STATUS
+        : row.status;
+    return toTask({ ...row, status, myRole: effectiveRole });
+  });
   return { tasks, boardRole };
 }
 

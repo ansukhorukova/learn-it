@@ -14,3 +14,16 @@
 export function canWrite(role) {
   return role === 'owner' || role === 'collaborator';
 }
+
+// US-039/US-040: adding task comments is allowed for owner/collaborator AND
+// for a public visitor of a visibility: 'public' board (role 'public') — a
+// public board is a learning template, so a visitor can ask questions on the
+// material. A real board_members viewer stays read-only on comments (US-019
+// AC3), so 'viewer' is deliberately NOT included here — that case still shows
+// the read-only banner without a form. Only the comments section (add form +
+// "Reply" buttons) is gated on this; every other write-UI in the task panel
+// (description, estimate, attachments, delete) stays on canWrite, which
+// excludes 'public'.
+export function canComment(role) {
+  return role === 'owner' || role === 'collaborator' || role === 'public';
+}

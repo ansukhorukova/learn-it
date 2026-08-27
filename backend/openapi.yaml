@@ -1086,6 +1086,12 @@ paths:
         `myRole` is its effective role, which can be MORE permissive than
         the board-level one if that specific task also has a `task_shares`
         row for the caller (see the Task schema's `myRole` note).
+
+
+        **US-039**: for a task whose effective role is `public` (public board,
+        no real membership), each task's `status` is that caller's PERSONAL
+        overlay (`task_personal_status`, fallback `'planned'`), not the shared
+        `tasks.status` — see the Task schema's `status` note.
       operationId: listBoardTasks
       tags: [tasks]
       security:
@@ -1104,7 +1110,12 @@ paths:
                       $ref: '#/components/schemas/Task'
                   columnTotals:
                     type: object
-                    description: Sum of `totalSeconds` per status column, for the caller's own time only.
+                    description: >
+                      Sum of `totalSeconds` per status column, for the
+                      caller's own time only. Grouped by each task's RESOLVED
+                      `status` — for a `myRole: 'public'` caller (US-039)
+                      that is their personal overlay, so their logged time
+                      lands in their personal columns, not the owner's.
                     properties:
                       planned:
                         type: integer
@@ -1437,6 +1448,12 @@ paths:
         for the effective-role priority rule. Any effective role (viewer or
         above) can read; owner/collaborator/viewer all resolve here the same
         way they do on every other task endpoint.
+
+
+        **US-039**: for a `myRole: 'public'` caller the returned `status` is
+        their personal `task_personal_status` overlay (fallback `'planned'`),
+        not the owner's shared `tasks.status` — see the Task schema's
+        `status` note.
       operationId: getTask
       tags: [tasks]
       security:
@@ -1667,13 +1684,16 @@ paths:
     post:
       summary: Post a comment on a task
       description: >
-        Create a `task_comments` row (US-019 AC2). Owner/collaborator only
-        (board- or task-level, whichever is more permissive) — same
-        collaborator+ gate as `PATCH /tasks/{id}`: a viewer gets 403
-        `errors.task.readOnlyAccess` (AC3), no access at all gets 403
-        `errors.task.forbidden` (AC6). No `PATCH`/`DELETE` for a comment
-        exists in this pass — view + add only, an explicit MVP scope
-        decision (AC10), not an oversight.
+        Create a `task_comments` row (US-019 AC2, gate widened by US-039
+        AC15/AC16). Owner, collaborator, OR `public` (an authenticated
+        visitor of a `visibility: 'public'` board with no real membership,
+        `myRole: 'public'`) may post — a public visitor walks the board as a
+        learning template and needs to ask questions. A REAL
+        `board_members`/`task_shares` viewer is still read-only here (403
+        `errors.task.readOnlyAccess`, AC3/AC16), and no access at all is
+        still 403 `errors.task.forbidden` (AC6/AC17). Comments stay shared
+        and visible to everyone with task access. No `PATCH`/`DELETE` for a
+        comment exists in this pass — view + add only (AC10).
       operationId: createTaskComment
       tags: [comments]
       security:
@@ -1727,13 +1747,108 @@ paths:
         '403':
           description: >
             No access to the task at all (`errors.task.forbidden`), or a
-            viewer trying to post (`errors.task.readOnlyAccess`).
+            REAL `board_members`/`task_shares` viewer trying to post
+            (`errors.task.readOnlyAccess`) — a `public` visitor is NOT
+            rejected here (US-039).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: No task with this id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/my-status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      summary: Set the caller's personal status for a task
+      description: >
+        US-039 — upsert the caller's PERSONAL status overlay
+        (`task_personal_status`, keyed by `(task_id, user_id)`) for a task on
+        a `visibility: 'public'` board.
+
+        Allowed ONLY when the caller's effective role on the task is `public`
+        (an authenticated visitor with no real membership — not the owner, no
+        `board_members` row, no `task_shares` row on this task). Such a
+        visitor walks the board as a learning template, so their progress is
+        their own and independent of the owner's shared `tasks.status`.
+
+        A caller with ANY real membership gets 403
+        `errors.task.personalStatusNotApplicable` (AC9) — owner/collaborator
+        move the shared status via `PATCH /tasks/{id}`; a real viewer is
+        read-only on it with no personal bypass. This endpoint NEVER writes
+        `tasks.status`.
+
+        The write is an idempotent, race-safe upsert
+        (`onConflict(task_id,user_id).merge()`) that always bumps
+        `updated_at`; the personal status persists across sessions and
+        devices. Flipping the board `public -> private` does not delete the
+        row (AC19) but revokes access immediately (subsequent calls 403).
+      operationId: setMyTaskStatus
+      tags: [tasks]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [planned, in_progress, done]
+              required: [status]
+      responses:
+        '200':
+          description: The upserted personal status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [planned, in_progress, done]
+                  updatedAt:
+                    type: string
+                    format: date-time
+                required: [taskId, status, updatedAt]
+        '400':
+          description: Missing or invalid `status` value (`errors.task.invalidStatus`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            The caller has a real membership on the task, so a personal
+            overlay does not apply (`errors.task.personalStatusNotApplicable`),
+            or the caller has no access to the task at all
+            (`errors.task.forbidden` — e.g. the board is not public, or was
+            flipped back to private).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: No task with this id, or an invalid uuid (`errors.task.notFound`).
           content:
             application/json:
               schema:
@@ -3286,6 +3401,20 @@ components:
         status:
           type: string
           enum: [planned, in_progress, done]
+          description: >
+            The task's status column. For every real role
+            (`myRole` owner/collaborator/viewer) this is the SHARED
+            `tasks.status` — one state all members move together. For
+            `myRole: 'public'` (US-039) — an authenticated visitor of a
+            `visibility: 'public'` board with NO real membership — this is
+            instead that caller's OWN PERSONAL overlay from
+            `task_personal_status` (fallback `'planned'` when they've set
+            nothing), written only via `PUT /tasks/{id}/my-status`. The
+            owner's shared status is never exposed to such a visitor, and a
+            visitor's personal status is never exposed to the owner or any
+            real member (same absolute privacy as `time_entries`). In
+            `GET /boards/{id}/tasks`, `columnTotals` are summed over this
+            resolved status.
         position:
           type: integer
           description: Internal, automatically reindexed ordering value — not meaningful across columns.

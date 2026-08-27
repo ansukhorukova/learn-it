@@ -26,7 +26,7 @@ import { replyExcerpt } from '../lib/chatExcerpt';
 import { PLANNED_MINUTES_FIELD_MAX, PLANNED_TOTAL_MINUTES_MAX } from '../constants/plannedTimeLimits';
 import { MINUTES_MAX, MINUTES_MIN, NOTE_MAX_LENGTH as TIME_NOTE_MAX_LENGTH } from '../constants/timeEntryLimits';
 import { formatDuration, formatSessionTimestamp, formatStopwatch } from '../lib/duration';
-import { canWrite } from '../lib/roles';
+import { canComment, canWrite } from '../lib/roles';
 import ConfirmDialog from './ConfirmDialog';
 import SharePanel from './SharePanel';
 import styles from './TaskPanel.module.css';
@@ -204,6 +204,12 @@ function TaskPanel({
   // deliberately NEVER gated on this — US16 gives a viewer full access to
   // their own timer/time-entries regardless of role.
   const editable = canWrite(task.myRole);
+  // US-040: a public-board visitor (task.myRole === 'public') can add
+  // comments and reply, but nothing else here is writable for them — every
+  // other control stays gated on `editable` (canWrite excludes 'public'). A
+  // real board_members viewer stays read-only on comments too (canComment
+  // excludes 'viewer'), so they still see the read-only banner, no form.
+  const canPostComments = canComment(task.myRole);
   const [sharingTask, setSharingTask] = useState(false);
 
   const [attachments, setAttachments] = useState(null); // null = loading
@@ -1516,7 +1522,7 @@ function TaskPanel({
                           including level 3 (where the BE flattens the new
                           comment into a sibling rather than hiding the
                           button). */}
-                      {editable && (
+                      {canPostComments && (
                         <div className={styles.commentRowActions}>
                           <button
                             type="button"
@@ -1527,7 +1533,7 @@ function TaskPanel({
                           </button>
                         </div>
                       )}
-                      {editable && replyTargetId === comment.id && (
+                      {canPostComments && replyTargetId === comment.id && (
                         <div className={styles.inlineReplyForm}>{renderCommentForm({ inline: true })}</div>
                       )}
                     </li>
@@ -1536,12 +1542,14 @@ function TaskPanel({
               </ul>
             )}
 
-            {/* US-019 AC3: a viewer sees the full list above but the add
-                form is replaced with a banner rather than a disabled form —
-                same hide-not-disable convention as the rest of this panel.
+            {/* US-019 AC3 / US-040 AC7: a real board_members viewer sees the
+                full list above but the add form is replaced with a banner
+                rather than a disabled form — same hide-not-disable convention
+                as the rest of this panel. A public-board visitor (role
+                'public') keeps the form (canPostComments, US-040 AC6).
                 US-034: while an inline reply form is open, the bottom
                 top-level composer is hidden to keep a single active form. */}
-            {editable ? (
+            {canPostComments ? (
               replyTargetId === null && renderCommentForm({ inline: false })
             ) : (
               <p className={styles.infoBanner}>{t('taskPanel.comments.viewerBanner')}</p>

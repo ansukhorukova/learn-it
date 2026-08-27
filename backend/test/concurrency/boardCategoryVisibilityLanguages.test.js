@@ -307,7 +307,11 @@ describe('US-022 public board visibility', () => {
     await cleanupUser(visitorId);
   });
 
-  it('AC6: a public visitor can read comments but gets 403 errors.task.readOnlyAccess trying to post one', async () => {
+  it('AC6 (superseded by US-039 AC15): a public visitor can read comments AND now post them', async () => {
+    // US-022 originally made a public visitor read-only on comments; US-039
+    // deliberately widened the POST gate so a public-board visitor with no
+    // real membership can ask questions on the material. A REAL board viewer
+    // is still read-only — covered in taskPersonalStatus.test.js AC16.
     await boardsService.updateBoard(board.id, ownerId, { visibility: 'public' });
     const visitorId = await createUser();
     const task = await createTask(board.id, ownerId);
@@ -316,9 +320,8 @@ describe('US-022 public board visibility', () => {
     const list = await taskCommentsService.listComments(task.id, visitorId);
     expect(list).toHaveLength(1);
 
-    await expect(taskCommentsService.createComment(task.id, visitorId, { body: 'Nope' })).rejects.toMatchObject({
-      messageKey: 'errors.task.readOnlyAccess',
-    });
+    const posted = await taskCommentsService.createComment(task.id, visitorId, { body: 'A question' });
+    expect(posted.authorId).toBe(visitorId);
 
     await cleanupUser(visitorId);
   });

@@ -1,6 +1,6 @@
 const db = require('../db/knex');
 const { isUuid } = require('../lib/uuid');
-const { ValidationError, NotFoundError } = require('../lib/serviceErrors');
+const { ValidationError, NotFoundError, ForbiddenError } = require('../lib/serviceErrors');
 const { requireTaskRole } = require('../lib/authz');
 const { lockRow } = require('../lib/db');
 const { isForeignKeyViolation } = require('../lib/dbErrors');
@@ -106,13 +106,17 @@ async function listComments(taskId, userId) {
 }
 
 /**
- * POST .../comments — owner/collaborator only (US-019 AC2/AC3/AC6). Reuses
- * `requireTaskRole(taskId, userId, 'collaborator')` — the exact same gate
- * `tasks.service.js`'s `updateTask`/`attachments.service.js`'s
- * `createAttachment` already use for a task write: a viewer gets 403
- * `errors.task.readOnlyAccess`, no access at all gets 403
- * `errors.task.forbidden`. Authorization is checked before validating the
- * body (matches `createAttachment`'s ordering in attachments.service.js).
+ * POST .../comments — owner / collaborator / `public` may post (US-019
+ * AC2/AC3/AC6, gate widened by US-039 AC15/AC16). A public-board visitor
+ * with no real membership (effective role `public`) can now add comments —
+ * they walk the board as a learning template and need to ask questions. A
+ * REAL `board_members`/`task_shares` viewer is still read-only here
+ * (`errors.task.readOnlyAccess`), and no access at all is still
+ * `errors.task.forbidden`. Implemented as `requireTaskRole(..., 'viewer')`
+ * (admits `public`, which ranks alongside `viewer`) plus an explicit reject
+ * of a real `viewer` — `public` and `viewer` share a rank so the gate alone
+ * can't tell them apart. Authorization is checked before validating the body
+ * (matches `createAttachment`'s ordering in attachments.service.js).
  *
  * `lockRow` on the parent task, inside a transaction, mirrors
  * `attachments.service.js`'s `insertAttachmentLocked` — closes the race
@@ -122,7 +126,8 @@ async function listComments(taskId, userId) {
  * ever reached through a path that skips the lock.
  */
 async function createComment(taskId, userId, { body, replyToCommentId } = {}) {
-  await requireTaskRole(taskId, userId, 'collaborator');
+  const { role } = await requireTaskRole(taskId, userId, 'viewer');
+  if (role === 'viewer') throw new ForbiddenError('errors.task.readOnlyAccess');
   const validBody = validateBody(body);
   const { parentCommentId, replyToCommentId: resolvedReplyToId } = await resolveReplyTarget(
     taskId,

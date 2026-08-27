@@ -159,6 +159,16 @@ export function deleteTask(idToken, taskId) {
   return request(`/tasks/${taskId}`, { method: 'DELETE', idToken });
 }
 
+// PUT /tasks/:id/my-status (US-039) — upsert the caller's PERSONAL status
+// overlay for a task on a visibility: 'public' board. Called ONLY when the
+// caller's effective role on the task is 'public' (public board visitor with
+// no real membership) — never a substitute for updateTask()'s shared-status
+// PATCH. 200 → { taskId, status, updatedAt }. 403
+// errors.task.personalStatusNotApplicable if a real membership appeared.
+export function setMyTaskStatus(idToken, taskId, status) {
+  return request(`/tasks/${taskId}/my-status`, { method: 'PUT', idToken, body: { status } });
+}
+
 // --- Attachments (US9) ---
 
 export function listAttachments(idToken, taskId) {
