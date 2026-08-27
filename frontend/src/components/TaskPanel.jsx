@@ -22,6 +22,7 @@ import {
 } from '../api/client';
 import { ALLOWED_FILE_MIME_TYPES, FILE_INPUT_ACCEPT, MAX_FILE_SIZE_BYTES } from '../constants/attachmentLimits';
 import { COMMENT_BODY_MAX_LENGTH } from '../constants/commentLimits';
+import { replyExcerpt } from '../lib/chatExcerpt';
 import { PLANNED_MINUTES_FIELD_MAX, PLANNED_TOTAL_MINUTES_MAX } from '../constants/plannedTimeLimits';
 import { MINUTES_MAX, MINUTES_MIN, NOTE_MAX_LENGTH as TIME_NOTE_MAX_LENGTH } from '../constants/timeEntryLimits';
 import { formatDuration, formatSessionTimestamp, formatStopwatch } from '../lib/duration';
@@ -55,6 +56,44 @@ function groupByKind(attachments) {
 function truncate(text, max) {
   if (!text || text.length <= max) return text;
   return `${text.slice(0, max)}…`;
+}
+
+// US-034 — flatten the chronological `task_comments` array into render rows
+// with a visual depth (0/1/2, capped at 3 levels). The tree is built
+// EXCLUSIVELY from `parentCommentId` (AC9); `replyToCommentId` is only used
+// later to render the "In reply to {name}" line on a flattened level-3
+// sibling (where it points deeper than the structural parent, AC3/AC10).
+// Children keep the source array's chronological order.
+function buildCommentTree(comments) {
+  const ids = new Set(comments.map((c) => c.id));
+  const childrenOf = new Map();
+  for (const comment of comments) {
+    // A comment whose parent isn't in the list (can't happen today — GET
+    // returns the whole set and there's no per-comment delete, US-034 AC13
+    // — but defended so a stray row never silently drops its whole subtree).
+    const parentKey =
+      comment.parentCommentId && ids.has(comment.parentCommentId) ? comment.parentCommentId : '__root__';
+    if (!childrenOf.has(parentKey)) childrenOf.set(parentKey, []);
+    childrenOf.get(parentKey).push(comment);
+  }
+  const rows = [];
+  const walk = (key, depth) => {
+    let prevReplyRef = null;
+    for (const comment of childrenOf.get(key) || []) {
+      // US-034 AC3/AC10 — a flattened level-3 sibling addresses a comment
+      // deeper than its structural parent; the "In reply to {name}" line is
+      // shown for it only when that target differs from the previous
+      // sibling's ("там, де вона відрізняється від найближчого сусіда").
+      const isFlattened =
+        comment.replyToCommentId && comment.replyToCommentId !== comment.parentCommentId;
+      const showReplyRef = isFlattened && comment.replyToCommentId !== prevReplyRef;
+      prevReplyRef = isFlattened ? comment.replyToCommentId : null;
+      rows.push({ comment, depth, showReplyRef });
+      walk(comment.id, Math.min(depth + 1, 2));
+    }
+  };
+  walk('__root__', 0);
+  return rows;
 }
 
 // One attachment chip. `onDelete` opens the shared ConfirmDialog in the
@@ -210,6 +249,10 @@ function TaskPanel({
   const [commentBody, setCommentBody] = useState('');
   const [commentErrorKey, setCommentErrorKey] = useState(null);
   const [submittingComment, setSubmittingComment] = useState(false);
+  // US-034 — the comment the "Reply" button was clicked on, or null for a
+  // plain top-level comment. When set, the composer renders inline under
+  // that comment with a quote preview instead of at the bottom.
+  const [replyTargetId, setReplyTargetId] = useState(null);
 
   const [starting, setStarting] = useState(false);
   const [stoppingForm, setStoppingForm] = useState(false);
@@ -352,6 +395,9 @@ function TaskPanel({
     let cancelled = false;
     setComments(null);
     setCommentsLoadErrorKey(null);
+    setReplyTargetId(null);
+    setCommentBody('');
+    setCommentErrorKey(null);
     (async () => {
       try {
         const data = await listTaskComments(idToken, task.id);
@@ -764,6 +810,18 @@ function TaskPanel({
     await savePlannedMinutes(null);
   }
 
+  function startReply(commentId) {
+    setReplyTargetId(commentId);
+    setCommentBody('');
+    setCommentErrorKey(null);
+  }
+
+  function cancelReply() {
+    setReplyTargetId(null);
+    setCommentBody('');
+    setCommentErrorKey(null);
+  }
+
   async function handleAddComment(event) {
     event.preventDefault();
     const trimmed = commentBody.trim();
@@ -779,9 +837,13 @@ function TaskPanel({
     setSubmittingComment(true);
     setCommentErrorKey(null);
     try {
-      const comment = await createTaskComment(idToken, task.id, { body: trimmed });
+      const comment = await createTaskComment(idToken, task.id, {
+        body: trimmed,
+        replyToCommentId: replyTargetId || undefined,
+      });
       setComments((prev) => [...(prev || []), comment]);
       setCommentBody('');
+      setReplyTargetId(null);
     } catch (err) {
       setCommentErrorKey(err.messageKey || 'errors.generic');
     } finally {
@@ -790,6 +852,51 @@ function TaskPanel({
   }
 
   const grouped = attachments ? groupByKind(attachments) : { file: [], link: [], note: [] };
+
+  const commentsById = new Map((comments || []).map((comment) => [comment.id, comment]));
+
+  // US-034 — one composer, rendered either at the bottom (top-level comment)
+  // or inline under the comment being replied to. `replyExcerpt`/the preview
+  // line come straight from the already-loaded list (AC6 — no extra fetch).
+  function renderCommentForm({ inline }) {
+    const target = inline ? commentsById.get(replyTargetId) : null;
+    const fieldId = inline ? 'task-comment-reply-body' : 'task-comment-body';
+    return (
+      <form className={styles.form} onSubmit={handleAddComment} noValidate>
+        {target && (
+          <div className={styles.replyPreview}>
+            <span>
+              {t('taskPanel.comments.replyPreview', {
+                name: target.authorName,
+                excerpt: replyExcerpt(target.body),
+              })}
+            </span>
+            <button type="button" className={styles.replyPreviewCancel} onClick={cancelReply}>
+              {t('taskPanel.comments.cancelReply')}
+            </button>
+          </div>
+        )}
+        <label className={styles.srOnly} htmlFor={fieldId}>
+          {t('taskPanel.comments.bodyPlaceholder')}
+        </label>
+        <textarea
+          id={fieldId}
+          className={styles.textarea}
+          value={commentBody}
+          maxLength={COMMENT_BODY_MAX_LENGTH}
+          placeholder={t('taskPanel.comments.bodyPlaceholder')}
+          onChange={(event) => setCommentBody(event.target.value)}
+          autoFocus={inline}
+        />
+        {commentErrorKey && <span className={styles.fieldError}>{t(commentErrorKey)}</span>}
+        <div className={styles.formActions}>
+          <button type="submit" className={styles.submit} disabled={submittingComment}>
+            {submittingComment ? t('taskPanel.comments.saving') : t('taskPanel.comments.submit')}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   return (
     <div className={styles.overlay} role="presentation" onClick={onClose}>
@@ -1387,41 +1494,55 @@ function TaskPanel({
             {comments.length === 0 && <p className={styles.hint}>{t('taskPanel.comments.empty')}</p>}
             {comments.length > 0 && (
               <ul className={styles.commentList}>
-                {comments.map((comment) => (
-                  <li key={comment.id} className={styles.commentRow}>
-                    <div className={styles.commentMeta}>
-                      <span className={styles.commentAuthor}>{comment.authorName}</span>
-                      <span className={styles.sessionMeta}>{formatSessionTimestamp(comment.createdAt, locale)}</span>
-                    </div>
-                    <p className={styles.commentBody}>{comment.body}</p>
-                  </li>
-                ))}
+                {buildCommentTree(comments).map(({ comment, depth, showReplyRef }) => {
+                  const depthClass =
+                    depth === 1 ? styles.commentDepth1 : depth === 2 ? styles.commentDepth2 : '';
+                  const replyRef = showReplyRef ? commentsById.get(comment.replyToCommentId) : null;
+                  return (
+                    <li key={comment.id} className={`${styles.commentRow} ${depthClass}`}>
+                      {replyRef && (
+                        <span className={styles.commentReplyRef}>
+                          {t('taskPanel.comments.inReplyTo', { name: replyRef.authorName })}
+                        </span>
+                      )}
+                      <div className={styles.commentMeta}>
+                        <span className={styles.commentAuthor}>{comment.authorName}</span>
+                        <span className={styles.sessionMeta}>
+                          {formatSessionTimestamp(comment.createdAt, locale)}
+                        </span>
+                      </div>
+                      <p className={styles.commentBody}>{comment.body}</p>
+                      {/* US-034 AC5 — "Reply" is present at every level,
+                          including level 3 (where the BE flattens the new
+                          comment into a sibling rather than hiding the
+                          button). */}
+                      {editable && (
+                        <div className={styles.commentRowActions}>
+                          <button
+                            type="button"
+                            className={styles.commentReplyButton}
+                            onClick={() => startReply(comment.id)}
+                          >
+                            {t('taskPanel.comments.reply')}
+                          </button>
+                        </div>
+                      )}
+                      {editable && replyTargetId === comment.id && (
+                        <div className={styles.inlineReplyForm}>{renderCommentForm({ inline: true })}</div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
 
             {/* US-019 AC3: a viewer sees the full list above but the add
                 form is replaced with a banner rather than a disabled form —
-                same hide-not-disable convention as the rest of this panel. */}
+                same hide-not-disable convention as the rest of this panel.
+                US-034: while an inline reply form is open, the bottom
+                top-level composer is hidden to keep a single active form. */}
             {editable ? (
-              <form className={styles.form} onSubmit={handleAddComment} noValidate>
-                <label className={styles.srOnly} htmlFor="task-comment-body">
-                  {t('taskPanel.comments.bodyPlaceholder')}
-                </label>
-                <textarea
-                  id="task-comment-body"
-                  className={styles.textarea}
-                  value={commentBody}
-                  maxLength={COMMENT_BODY_MAX_LENGTH}
-                  placeholder={t('taskPanel.comments.bodyPlaceholder')}
-                  onChange={(event) => setCommentBody(event.target.value)}
-                />
-                {commentErrorKey && <span className={styles.fieldError}>{t(commentErrorKey)}</span>}
-                <div className={styles.formActions}>
-                  <button type="submit" className={styles.submit} disabled={submittingComment}>
-                    {submittingComment ? t('taskPanel.comments.saving') : t('taskPanel.comments.submit')}
-                  </button>
-                </div>
-              </form>
+              replyTargetId === null && renderCommentForm({ inline: false })
             ) : (
               <p className={styles.infoBanner}>{t('taskPanel.comments.viewerBanner')}</p>
             )}

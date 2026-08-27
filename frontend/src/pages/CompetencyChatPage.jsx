@@ -13,9 +13,9 @@ import {
   listCompetencyChatMessages,
   listMyCompetencyChats,
 } from '../api/client';
-import { formatSessionTimestamp } from '../lib/duration';
-import { CHAT_MESSAGE_BODY_MAX_LENGTH } from '../constants/chatMessageLimits';
 import AppHeader from '../components/AppHeader';
+import ChatConversation from '../components/ChatConversation';
+import ForwardMessageModal from '../components/ForwardMessageModal';
 import styles from './CompetencyChatPage.module.css';
 
 // /competencies/:id/chat (US-028) — the one shared discussion room for a
@@ -26,7 +26,7 @@ import styles from './CompetencyChatPage.module.css';
 // resource in this app.
 function CompetencyChatPage() {
   const { user, loading: authLoading } = useAuthUser();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { id: competencyId } = useParams();
   const { status, onMessage, subscribeCompetencyChat } = useWebSocket();
 
@@ -35,10 +35,12 @@ function CompetencyChatPage() {
   const [loadState, setLoadState] = useState('loading'); // loading | ready | notFound | error
   const [loadErrorKey, setLoadErrorKey] = useState(null);
 
-  const [messageBody, setMessageBody] = useState('');
-  const [sendErrorKey, setSendErrorKey] = useState(null);
-  const [sending, setSending] = useState(false);
   const [wsErrorKey, setWsErrorKey] = useState(null);
+
+  // US-036 — the competency-chat message a "Forward" click opened the modal
+  // for, and a transient success toast after a forward completes (AC9).
+  const [forwardSource, setForwardSource] = useState(null);
+  const [forwardToastKey, setForwardToastKey] = useState(null);
 
   // US-031 AC8/AC9 — membership control available from ANY entry point into
   // this screen, not just /chats/find. `null` while unknown (membership
@@ -120,33 +122,30 @@ function CompetencyChatPage() {
   if (authLoading) return null;
   if (!user) return <Navigate to="/auth" replace />;
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const trimmed = messageBody.trim();
-    if (!trimmed) {
-      setSendErrorKey('errors.competencyChat.messageBodyRequired');
-      return;
+  async function handleSend(body, replyToMessageId) {
+    const idToken = await user.getIdToken();
+    const message = await createCompetencyChatMessage(idToken, competencyId, { body, replyToMessageId });
+    if (!knownMessageIds.current.has(message.id)) {
+      knownMessageIds.current.add(message.id);
+      setMessages((prev) => (prev ? [...prev, message] : [message]));
     }
-    if (trimmed.length > CHAT_MESSAGE_BODY_MAX_LENGTH) {
-      setSendErrorKey('errors.competencyChat.messageBodyTooLong');
-      return;
-    }
+  }
 
-    setSending(true);
-    setSendErrorKey(null);
-    try {
-      const idToken = await user.getIdToken();
-      const message = await createCompetencyChatMessage(idToken, competencyId, { body: trimmed });
-      if (!knownMessageIds.current.has(message.id)) {
-        knownMessageIds.current.add(message.id);
-        setMessages((prev) => (prev ? [...prev, message] : [message]));
-      }
-      setMessageBody('');
-    } catch (err) {
-      setSendErrorKey(err.messageKey || 'errors.generic');
-    } finally {
-      setSending(false);
+  function handleForwarded(message, destination) {
+    // US-036 AC9 — flash the success toast. If the forward's destination is
+    // THIS room, append the returned message right away (deduped against
+    // the WS push that also delivers it, same guard as handleSend) so it
+    // shows even if the socket is momentarily down.
+    if (
+      destination.type === 'competencyChat' &&
+      destination.id === competencyId &&
+      !knownMessageIds.current.has(message.id)
+    ) {
+      knownMessageIds.current.add(message.id);
+      setMessages((prev) => (prev ? [...prev, message] : [message]));
     }
+    setForwardToastKey('chat.forward.success');
+    window.setTimeout(() => setForwardToastKey(null), 3000);
   }
 
   async function handleToggleMembership() {
@@ -229,44 +228,39 @@ function CompetencyChatPage() {
               </p>
             )}
 
-            {messages && messages.length === 0 && <p className={styles.hint}>{t('chat.competency.empty')}</p>}
-
-            {messages && messages.length > 0 && (
-              <ul className={styles.messageList}>
-                {messages.map((message) => (
-                  <li key={message.id} className={styles.messageRow}>
-                    <div className={styles.messageMeta}>
-                      <span className={styles.messageAuthor}>{message.senderName}</span>
-                      <span className={styles.messageTime}>{formatSessionTimestamp(message.createdAt, locale)}</span>
-                    </div>
-                    <p className={styles.messageBody}>{message.body}</p>
-                  </li>
-                ))}
-              </ul>
+            {forwardToastKey && (
+              <p className={styles.toast} role="status">
+                {t(forwardToastKey)}
+              </p>
             )}
 
-            <form className={styles.form} onSubmit={handleSubmit} noValidate>
-              <label className={styles.srOnly} htmlFor="competency-chat-body">
-                {t('chat.competency.messagePlaceholder')}
-              </label>
-              <textarea
-                id="competency-chat-body"
-                className={styles.textarea}
-                value={messageBody}
-                maxLength={CHAT_MESSAGE_BODY_MAX_LENGTH}
-                placeholder={t('chat.competency.messagePlaceholder')}
-                onChange={(event) => setMessageBody(event.target.value)}
-              />
-              {sendErrorKey && <span className={styles.fieldError}>{t(sendErrorKey)}</span>}
-              <div className={styles.formActions}>
-                <button type="submit" className={styles.submit} disabled={sending}>
-                  {sending ? t('chat.competency.sending') : t('chat.competency.send')}
-                </button>
-              </div>
-            </form>
+            {/* US-036 AC12: every competency-chat message is forwardable by
+                any authenticated user — `onForward` is always passed here
+                (unlike DmThreadPage, which omits it). */}
+            <ChatConversation
+              messages={messages}
+              currentUserId={user.uid}
+              emptyLabel={t('chat.competency.empty')}
+              placeholder={t('chat.competency.messagePlaceholder')}
+              sendLabel={t('chat.competency.send')}
+              sendingLabel={t('chat.competency.sending')}
+              bodyRequiredKey="errors.competencyChat.messageBodyRequired"
+              bodyTooLongKey="errors.competencyChat.messageBodyTooLong"
+              onSend={handleSend}
+              onForward={(message) => setForwardSource(message)}
+            />
           </>
         )}
       </main>
+
+      {forwardSource && (
+        <ForwardMessageModal
+          user={user}
+          sourceMessage={forwardSource}
+          onClose={() => setForwardSource(null)}
+          onForwarded={handleForwarded}
+        />
+      )}
     </div>
   );
 }

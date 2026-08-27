@@ -6,9 +6,8 @@ import { useI18n } from '../i18n/I18nProvider';
 import { useHeadMeta } from '../lib/useHeadMeta';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { createDmThreadMessage, listDmThreadMessages, listMyDmThreads } from '../api/client';
-import { formatSessionTimestamp } from '../lib/duration';
-import { CHAT_MESSAGE_BODY_MAX_LENGTH } from '../constants/chatMessageLimits';
 import AppHeader from '../components/AppHeader';
+import ChatConversation from '../components/ChatConversation';
 import styles from './DmThreadPage.module.css';
 
 // /messages/:threadId (US-027) — one DM thread's history + send form. REST
@@ -23,7 +22,7 @@ import styles from './DmThreadPage.module.css';
 // a second bespoke request.
 function DmThreadPage() {
   const { user, loading: authLoading } = useAuthUser();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const { threadId } = useParams();
   const { status, onMessage, subscribeDmThread } = useWebSocket();
 
@@ -32,9 +31,6 @@ function DmThreadPage() {
   const [loadState, setLoadState] = useState('loading'); // loading | ready | forbidden | error
   const [loadErrorKey, setLoadErrorKey] = useState(null);
 
-  const [messageBody, setMessageBody] = useState('');
-  const [sendErrorKey, setSendErrorKey] = useState(null);
-  const [sending, setSending] = useState(false);
   const [wsErrorKey, setWsErrorKey] = useState(null);
 
   const knownMessageIds = useRef(new Set());
@@ -104,32 +100,12 @@ function DmThreadPage() {
   if (authLoading) return null;
   if (!user) return <Navigate to="/auth" replace />;
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const trimmed = messageBody.trim();
-    if (!trimmed) {
-      setSendErrorKey('errors.dmThread.messageBodyRequired');
-      return;
-    }
-    if (trimmed.length > CHAT_MESSAGE_BODY_MAX_LENGTH) {
-      setSendErrorKey('errors.dmThread.messageBodyTooLong');
-      return;
-    }
-
-    setSending(true);
-    setSendErrorKey(null);
-    try {
-      const idToken = await user.getIdToken();
-      const message = await createDmThreadMessage(idToken, threadId, { body: trimmed });
-      if (!knownMessageIds.current.has(message.id)) {
-        knownMessageIds.current.add(message.id);
-        setMessages((prev) => (prev ? [...prev, message] : [message]));
-      }
-      setMessageBody('');
-    } catch (err) {
-      setSendErrorKey(err.messageKey || 'errors.generic');
-    } finally {
-      setSending(false);
+  async function handleSend(body, replyToMessageId) {
+    const idToken = await user.getIdToken();
+    const message = await createDmThreadMessage(idToken, threadId, { body, replyToMessageId });
+    if (!knownMessageIds.current.has(message.id)) {
+      knownMessageIds.current.add(message.id);
+      setMessages((prev) => (prev ? [...prev, message] : [message]));
     }
   }
 
@@ -179,44 +155,19 @@ function DmThreadPage() {
               </p>
             )}
 
-            {messages && messages.length === 0 && <p className={styles.hint}>{t('chat.dm.emptyThread')}</p>}
-
-            {messages && messages.length > 0 && (
-              <ul className={styles.messageList}>
-                {messages.map((message) => (
-                  <li
-                    key={message.id}
-                    className={`${styles.messageRow} ${message.senderId === user.uid ? styles.messageMine : ''}`}
-                  >
-                    <div className={styles.messageMeta}>
-                      <span className={styles.messageAuthor}>{message.senderName}</span>
-                      <span className={styles.messageTime}>{formatSessionTimestamp(message.createdAt, locale)}</span>
-                    </div>
-                    <p className={styles.messageBody}>{message.body}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <form className={styles.form} onSubmit={handleSubmit} noValidate>
-              <label className={styles.srOnly} htmlFor="dm-message-body">
-                {t('chat.dm.messagePlaceholder')}
-              </label>
-              <textarea
-                id="dm-message-body"
-                className={styles.textarea}
-                value={messageBody}
-                maxLength={CHAT_MESSAGE_BODY_MAX_LENGTH}
-                placeholder={t('chat.dm.messagePlaceholder')}
-                onChange={(event) => setMessageBody(event.target.value)}
-              />
-              {sendErrorKey && <span className={styles.fieldError}>{t(sendErrorKey)}</span>}
-              <div className={styles.formActions}>
-                <button type="submit" className={styles.submit} disabled={sending}>
-                  {sending ? t('chat.dm.sending') : t('chat.dm.send')}
-                </button>
-              </div>
-            </form>
+            {/* US-036 AC12: DM messages get no Forward control — `onForward`
+                is omitted entirely, never just disabled. */}
+            <ChatConversation
+              messages={messages}
+              currentUserId={user.uid}
+              emptyLabel={t('chat.dm.emptyThread')}
+              placeholder={t('chat.dm.messagePlaceholder')}
+              sendLabel={t('chat.dm.send')}
+              sendingLabel={t('chat.dm.sending')}
+              bodyRequiredKey="errors.dmThread.messageBodyRequired"
+              bodyTooLongKey="errors.dmThread.messageBodyTooLong"
+              onSend={handleSend}
+            />
           </>
         )}
       </main>

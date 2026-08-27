@@ -2,6 +2,7 @@ const db = require('../db/knex');
 const { isUuid } = require('../lib/uuid');
 const { ValidationError } = require('../lib/serviceErrors');
 const { requireDmThreadAccess } = require('../lib/authz');
+const { resolveReplyTarget, fetchReplyPreviews } = require('../lib/chatMessages');
 const { broadcastDmMessage } = require('../ws/server');
 
 // Same limit as task_comments (US-019) — explicit reuse per US-027 AC7's
@@ -38,6 +39,17 @@ function resolveDisplayName(row) {
   return row.public_name || row.display_name;
 }
 
+// US-035 AC5/AC6: `replyTo` is `null` when the message isn't a reply, else
+// `{id, authorName, excerpt}` — the caller is responsible for resolving it
+// (via lib/chatMessages.js's fetchReplyPreviews) and passing it in as
+// `row.reply_to_preview`, since that lookup is batched across a whole
+// listMessages page rather than done per-row here.
+// US-036 AC1/AC6: `forwardedFrom` is `null` unless this message was created
+// by a forward FROM a competency chat (never from a DM — AC2), in which
+// case it's `{competencyId, competencySlug}` for the FE's "Forwarded from
+// {competency}" attribution (`chat.forward.attribution`) — the original
+// author is deliberately never exposed (US-036 "походження" decision #3:
+// minimal data, sender is always the forwarder).
 function toMessage(row) {
   return {
     id: row.id,
@@ -45,6 +57,10 @@ function toMessage(row) {
     senderId: row.sender_id,
     senderName: resolveDisplayName({ public_name: row.sender_public_name, display_name: row.sender_display_name }),
     body: row.body,
+    replyTo: row.reply_to_preview || null,
+    forwardedFrom: row.forwarded_from_competency_id
+      ? { competencyId: row.forwarded_from_competency_id, competencySlug: row.forwarded_competency_slug || null }
+      : null,
     createdAt: row.created_at,
   };
 }
@@ -194,14 +210,23 @@ async function listMessages(threadId, callerId) {
   await requireDmThreadAccess(threadId, callerId);
   const rows = await db('dm_messages')
     .join('users', 'users.id', 'dm_messages.sender_id')
+    .leftJoin('competencies', 'competencies.id', 'dm_messages.forwarded_from_competency_id')
     .where({ thread_id: threadId })
     .select(
       'dm_messages.*',
       'users.display_name as sender_display_name',
       'users.public_name as sender_public_name',
+      'competencies.slug as forwarded_competency_slug',
     )
     .orderBy('dm_messages.created_at', 'asc');
-  return rows.map(toMessage);
+
+  // US-035 AC6: batched, not N+1 — one extra query for the whole page's
+  // reply previews, same reasoning as fetchReplyPreviews's own header.
+  const replyPreviews = await fetchReplyPreviews(
+    'dm_messages',
+    rows.map((r) => r.reply_to_message_id),
+  );
+  return rows.map((row) => toMessage({ ...row, reply_to_preview: replyPreviews.get(row.reply_to_message_id) }));
 }
 
 /**
@@ -214,26 +239,86 @@ async function listMessages(threadId, callerId) {
  * row against a concurrent delete) there's no equivalent race to close here
  * — a plain INSERT is enough.
  */
-async function createMessage(threadId, callerId, { body } = {}) {
+async function createMessage(threadId, callerId, { body, replyToMessageId } = {}) {
   const thread = await requireDmThreadAccess(threadId, callerId);
   const validBody = validateMessageBody(body);
+  // US-035 AC1/AC3/AC4: must resolve to a message in THIS thread, or 400
+  // errors.chat.replyTargetInvalid.
+  const resolvedReplyToId = await resolveReplyTarget('dm_messages', 'thread_id', threadId, replyToMessageId);
 
   const [row] = await db('dm_messages')
-    .insert({ thread_id: threadId, sender_id: callerId, body: validBody })
+    .insert({ thread_id: threadId, sender_id: callerId, body: validBody, reply_to_message_id: resolvedReplyToId })
     .returning('*');
-  const sender = await db('users').where({ id: callerId }).first();
+  const [sender, replyPreviews] = await Promise.all([
+    db('users').where({ id: callerId }).first(),
+    fetchReplyPreviews('dm_messages', [resolvedReplyToId]),
+  ]);
   const message = toMessage({
     ...row,
     sender_display_name: sender.display_name,
     sender_public_name: sender.public_name,
+    reply_to_preview: replyPreviews.get(resolvedReplyToId),
+    forwarded_competency_slug: null, // a regular POST never sets forwarded_from_competency_id
   });
 
   // WS push AFTER the row is committed (US-027 AC8/AC9) — REST already
   // holds the source of truth by this point regardless of whether any
-  // socket is listening.
+  // socket is listening. US-035 AC5: the pushed `message.replyTo` is
+  // already hydrated, so the FE never needs a follow-up round trip.
   broadcastDmMessage(thread, message);
 
   return message;
 }
 
-module.exports = { normalizePair, getOrCreateThread, listThreads, listMessages, createMessage };
+/**
+ * US-036 AC1/AC4/AC7 — inserts a NEW `dm_messages` row as the destination
+ * side of a forward. Called only by chatForwards.service.js, after it has
+ * already confirmed the SOURCE message currently lives in
+ * `competency_chat_messages` (never `dm_messages` — AC2/AC7's transitive
+ * rule is enforced entirely in chatForwards.service.js, by table lookup,
+ * before this function is ever reached).
+ *
+ * Reuses `requireDmThreadAccess` directly — the EXACT SAME
+ * destination-authorization gate `createMessage` above uses (AC4) — rather
+ * than calling `createMessage` itself, because a forward's `body` is
+ * copied verbatim from an already-validated original and must NOT be run
+ * back through `validateMessageBody` (AC11), and a forwarded message is
+ * never itself a quote-reply (`reply_to_message_id` stays `null` here).
+ */
+async function createForwardedMessage(threadId, senderId, body, forwardedFromCompetencyId) {
+  const thread = await requireDmThreadAccess(threadId, senderId);
+
+  const [row] = await db('dm_messages')
+    .insert({
+      thread_id: threadId,
+      sender_id: senderId,
+      body,
+      forwarded_from_competency_id: forwardedFromCompetencyId,
+    })
+    .returning('*');
+
+  const [sender, forwardedCompetency] = await Promise.all([
+    db('users').where({ id: senderId }).first(),
+    forwardedFromCompetencyId ? db('competencies').where({ id: forwardedFromCompetencyId }).first() : null,
+  ]);
+
+  const message = toMessage({
+    ...row,
+    sender_display_name: sender.display_name,
+    sender_public_name: sender.public_name,
+    forwarded_competency_slug: forwardedCompetency ? forwardedCompetency.slug : null,
+  });
+
+  broadcastDmMessage(thread, message);
+
+  return message;
+}
+
+module.exports = {
+  normalizePair,
+  getOrCreateThread,
+  listThreads,
+  listMessages,
+  createMessage,
+  createForwardedMessage,
+};

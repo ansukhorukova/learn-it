@@ -354,7 +354,11 @@
       "bodyPlaceholder": "Write a comment…",
       "submit": "Post",
       "saving": "Posting…",
-      "viewerBanner": "You have view-only access — you can read comments but not post new ones."
+      "viewerBanner": "You have view-only access — you can read comments but not post new ones.",
+      "reply": "Reply",
+      "replyPreview": "Replying to {name}: \"{excerpt}\"",
+      "cancelReply": "Cancel",
+      "inReplyTo": "In reply to {name}"
     }
   },
   "profile": {
@@ -458,6 +462,26 @@
       "competencySectionHeading": "Competency chats",
       "findChatsCta": "Find chats",
       "emptyCompetencyChats": "You haven't joined any competency chats yet."
+    },
+    "message": {
+      "reply": "Reply",
+      "replyPreview": "Replying to {name}: \"{excerpt}\"",
+      "cancelReply": "Cancel",
+      "forward": "Forward",
+      "inReplyTo": "In reply to {name}"
+    },
+    "forward": {
+      "modalTitle": "Forward message",
+      "myChatsHeading": "My chats",
+      "searchOtherChats": "Find another competency chat…",
+      "pickDestination": "Choose where to forward this message.",
+      "confirm": "Forward",
+      "forwarding": "Forwarding…",
+      "cancel": "Cancel",
+      "success": "Message forwarded.",
+      "attribution": "Forwarded from {competency} chat",
+      "dmOptionLabel": "{name} — {competency}",
+      "noMyChats": "You have no direct messages or joined competency chats yet — use the search below."
     }
   },
   "ws": {
@@ -565,7 +589,8 @@
     },
     "comment": {
       "bodyRequired": "Enter a comment.",
-      "bodyTooLong": "Comment must be 2000 characters or fewer."
+      "bodyTooLong": "Comment must be 2000 characters or fewer.",
+      "replyTargetInvalid": "The comment you're replying to could not be found."
     },
     "user": {
       "notFound": "User not found."
@@ -583,7 +608,13 @@
       "messageBodyTooLong": "Message must be 2000 characters or fewer.",
       "notFound": "This competency chat is not available."
     },
-    "generic": "Something went wrong. Please try again."
+    "generic": "Something went wrong. Please try again.",
+    "chat": {
+      "replyTargetInvalid": "The message you're replying to could not be found in this conversation.",
+      "forwardFromDmForbidden": "Messages from direct conversations can't be forwarded.",
+      "messageNotFound": "This message is no longer available.",
+      "invalidDestinationType": "Choose a valid destination."
+    }
   },
   "time": {
     "unit": {

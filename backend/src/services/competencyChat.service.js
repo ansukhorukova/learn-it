@@ -2,6 +2,7 @@ const db = require('../db/knex');
 const { isUuid } = require('../lib/uuid');
 const { ValidationError } = require('../lib/serviceErrors');
 const { requireActiveCompetencyRoom } = require('../lib/authz');
+const { resolveReplyTarget, fetchReplyPreviews } = require('../lib/chatMessages');
 const { broadcastCompetencyChatMessage } = require('../ws/server');
 
 // Same limit as task_comments/dm_messages (US-028 AC4's "той самий ліміт,
@@ -25,6 +26,8 @@ function validateMessageBody(body) {
 
 // AUTH-004 AC5/AC6 public_name-falls-back-to-display_name pattern, same as
 // dmThreads.service.js/taskComments.service.js.
+// US-035/US-036: `replyTo`/`forwardedFrom` — see dmThreads.service.js's
+// toMessage header comment for what each field means; identical shape here.
 function toMessage(row) {
   return {
     id: row.id,
@@ -32,6 +35,10 @@ function toMessage(row) {
     senderId: row.sender_id,
     senderName: row.sender_public_name || row.sender_display_name,
     body: row.body,
+    replyTo: row.reply_to_preview || null,
+    forwardedFrom: row.forwarded_from_competency_id
+      ? { competencyId: row.forwarded_from_competency_id, competencySlug: row.forwarded_competency_slug || null }
+      : null,
     createdAt: row.created_at,
   };
 }
@@ -47,14 +54,23 @@ async function listMessages(competencyId) {
   await requireActiveCompetencyRoom(competencyId);
   const rows = await db('competency_chat_messages')
     .join('users', 'users.id', 'competency_chat_messages.sender_id')
-    .where({ competency_id: competencyId })
+    .leftJoin('competencies', 'competencies.id', 'competency_chat_messages.forwarded_from_competency_id')
+    .where({ 'competency_chat_messages.competency_id': competencyId })
     .select(
       'competency_chat_messages.*',
       'users.display_name as sender_display_name',
       'users.public_name as sender_public_name',
+      'competencies.slug as forwarded_competency_slug',
     )
     .orderBy('competency_chat_messages.created_at', 'asc');
-  return rows.map(toMessage);
+
+  // US-035 AC6: batched, not N+1 — same reasoning as
+  // dmThreads.service.js's listMessages.
+  const replyPreviews = await fetchReplyPreviews(
+    'competency_chat_messages',
+    rows.map((r) => r.reply_to_message_id),
+  );
+  return rows.map((row) => toMessage({ ...row, reply_to_preview: replyPreviews.get(row.reply_to_message_id) }));
 }
 
 /**
@@ -64,18 +80,75 @@ async function listMessages(competencyId) {
  * taskComments.service.js's createComment / dmThreads.service.js's
  * createMessage).
  */
-async function createMessage(competencyId, senderId, { body } = {}) {
+async function createMessage(competencyId, senderId, { body, replyToMessageId } = {}) {
   await requireActiveCompetencyRoom(competencyId);
   const validBody = validateMessageBody(body);
+  // US-035 AC2/AC3/AC4: must resolve to a message in THIS room, or 400
+  // errors.chat.replyTargetInvalid.
+  const resolvedReplyToId = await resolveReplyTarget(
+    'competency_chat_messages',
+    'competency_id',
+    competencyId,
+    replyToMessageId,
+  );
 
   const [row] = await db('competency_chat_messages')
-    .insert({ competency_id: competencyId, sender_id: senderId, body: validBody })
+    .insert({
+      competency_id: competencyId,
+      sender_id: senderId,
+      body: validBody,
+      reply_to_message_id: resolvedReplyToId,
+    })
     .returning('*');
-  const sender = await db('users').where({ id: senderId }).first();
+  const [sender, replyPreviews] = await Promise.all([
+    db('users').where({ id: senderId }).first(),
+    fetchReplyPreviews('competency_chat_messages', [resolvedReplyToId]),
+  ]);
   const message = toMessage({
     ...row,
     sender_display_name: sender.display_name,
     sender_public_name: sender.public_name,
+    reply_to_preview: replyPreviews.get(resolvedReplyToId),
+    forwarded_competency_slug: null, // a regular POST never sets forwarded_from_competency_id
+  });
+
+  broadcastCompetencyChatMessage(competencyId, message);
+
+  return message;
+}
+
+/**
+ * US-036 AC1/AC5/AC7 — inserts a NEW `competency_chat_messages` row as the
+ * destination side of a forward (whether the source was another competency
+ * chat room or — degenerately — this same room). Called only by
+ * chatForwards.service.js. Reuses `requireActiveCompetencyRoom` directly,
+ * the EXACT SAME existence/availability gate `createMessage` above uses
+ * (AC5) — membership is NOT checked (US-031 AC4's conclusion, reaffirmed
+ * for forward destinations by AC5). Body is copied verbatim, never
+ * re-validated (AC11); a forwarded message is never itself a reply.
+ */
+async function createForwardedMessage(competencyId, senderId, body, forwardedFromCompetencyId) {
+  await requireActiveCompetencyRoom(competencyId);
+
+  const [row] = await db('competency_chat_messages')
+    .insert({
+      competency_id: competencyId,
+      sender_id: senderId,
+      body,
+      forwarded_from_competency_id: forwardedFromCompetencyId,
+    })
+    .returning('*');
+
+  const [sender, forwardedCompetency] = await Promise.all([
+    db('users').where({ id: senderId }).first(),
+    forwardedFromCompetencyId ? db('competencies').where({ id: forwardedFromCompetencyId }).first() : null,
+  ]);
+
+  const message = toMessage({
+    ...row,
+    sender_display_name: sender.display_name,
+    sender_public_name: sender.public_name,
+    forwarded_competency_slug: forwardedCompetency ? forwardedCompetency.slug : null,
   });
 
   broadcastCompetencyChatMessage(competencyId, message);
@@ -172,4 +245,4 @@ async function listMyChats(userId) {
     .map(({ _lastActivityAt, ...rest }) => rest);
 }
 
-module.exports = { listMessages, createMessage, joinChat, leaveChat, listMyChats };
+module.exports = { listMessages, createMessage, createForwardedMessage, joinChat, leaveChat, listMyChats };

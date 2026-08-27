@@ -10,6 +10,7 @@ const competenciesRouter = require('./routes/competencies.route');
 const languagesRouter = require('./routes/languages.route');
 const dmThreadsRouter = require('./routes/dmThreads.route');
 const competencyChatsRouter = require('./routes/competencyChats.route');
+const chatForwardsRouter = require('./routes/chatForwards.route');
 
 const app = express();
 
@@ -74,5 +75,11 @@ app.use('/api/v1/dm-threads', dmThreadsRouter);
 // mounted under competenciesRouter above) for the same reason `/dm-threads`
 // is top-level rather than nested under `/users`.
 app.use('/api/v1/competency-chats', competencyChatsRouter);
+
+// Forwarding a message into a new chat (US-036) — a top-level action
+// resource (not nested under either /dm-threads or /competencies, since a
+// forward's SOURCE can be either and its DESTINATION can be either too, so
+// there's no single natural parent to nest it under).
+app.use('/api/v1/chat/forwards', chatForwardsRouter);
 
 module.exports = app;

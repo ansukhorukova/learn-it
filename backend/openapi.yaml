@@ -471,6 +471,15 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 2000
+                replyToMessageId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: >
+                    US-035 — optional quote-reply pointer. Must name a
+                    message in THIS same room, else 400
+                    `errors.chat.replyTargetInvalid` (AC2-4). Flat reference,
+                    not a thread (unlike `task_comments`, US-034).
               required: [body]
       responses:
         '201':
@@ -481,8 +490,10 @@ paths:
                 $ref: '#/components/schemas/CompetencyChatMessage'
         '400':
           description: >
-            Empty/whitespace-only body (`errors.competencyChat.messageBodyRequired`)
-            or body over 2000 characters (`errors.competencyChat.messageBodyTooLong`).
+            Empty/whitespace-only body (`errors.competencyChat.messageBodyRequired`),
+            body over 2000 characters (`errors.competencyChat.messageBodyTooLong`),
+            or a `replyToMessageId` not found in this room
+            (`errors.chat.replyTargetInvalid`, US-035 AC3/AC4).
           content:
             application/json:
               schema:
@@ -1601,6 +1612,21 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 2000
+                replyToCommentId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: >
+                    US-034 — optional. The exact comment the author clicked
+                    "Reply" on. The BE derives `parentCommentId` from it via
+                    the flatten-on-level-3 algorithm (US-034 AC1-3): a reply
+                    to a level-1 or level-2 comment deepens one level; a
+                    reply to a level-3 comment is stored as a SIBLING under
+                    the same level-2 parent (no level 4), while
+                    `replyToCommentId` still records the exact level-3
+                    target. Omitted/null -> a plain top-level comment
+                    (`parentCommentId` and `replyToCommentId` both null,
+                    unchanged from US-019).
               required: [body]
       responses:
         '201':
@@ -1611,8 +1637,10 @@ paths:
                 $ref: '#/components/schemas/TaskComment'
         '400':
           description: >
-            Empty/whitespace-only body (`errors.comment.bodyRequired`) or
-            body over 2000 characters (`errors.comment.bodyTooLong`).
+            Empty/whitespace-only body (`errors.comment.bodyRequired`),
+            body over 2000 characters (`errors.comment.bodyTooLong`), or a
+            `replyToCommentId` that doesn't exist or belongs to another task
+            (`errors.comment.replyTargetInvalid`, US-034 AC7).
           content:
             application/json:
               schema:
@@ -2522,6 +2550,15 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 2000
+                replyToMessageId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: >
+                    US-035 — optional quote-reply pointer. Must name a
+                    message in THIS same thread, else 400
+                    `errors.chat.replyTargetInvalid` (AC1/AC3/AC4). Replying
+                    to your own message is allowed (AC9).
               required: [body]
       responses:
         '201':
@@ -2532,8 +2569,10 @@ paths:
                 $ref: '#/components/schemas/DmMessage'
         '400':
           description: >
-            Empty/whitespace-only body (`errors.dmThread.messageBodyRequired`)
-            or body over 2000 characters (`errors.dmThread.messageBodyTooLong`).
+            Empty/whitespace-only body (`errors.dmThread.messageBodyRequired`),
+            body over 2000 characters (`errors.dmThread.messageBodyTooLong`),
+            or a `replyToMessageId` not found in this thread
+            (`errors.chat.replyTargetInvalid`, US-035 AC3/AC4).
           content:
             application/json:
               schema:
@@ -2583,6 +2622,105 @@ paths:
                 required: [chats]
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /chat/forwards:
+    post:
+      summary: Forward a message into another chat
+      description: >
+        US-036. Copies an existing message's body into a NEW message in a
+        destination chat (DM thread or competency room), under the
+        forwarder's own `senderId`. A top-level action resource — neither
+        the source nor the destination has a single natural parent to nest
+        it under.
+
+        The one rule this endpoint enforces: a forward is allowed ONLY when
+        `sourceMessageId` currently lives in `competency_chat_messages`. The
+        check is by TABLE LOOKUP, never by any historical/inherited field —
+        so a message that was itself forwarded from a competency chat INTO a
+        DM thread (now a real `dm_messages` row) cannot be forwarded further
+        (AC7, transitive). Source in `dm_messages` -> 403
+        `errors.chat.forwardFromDmForbidden`, unconditionally, even for a
+        participant of that thread (AC2). Source in neither table -> 404
+        `errors.chat.messageNotFound` (AC3).
+
+        Destination authorization reuses the EXACT SAME gate a normal
+        `POST /dm-threads/{id}/messages` (AC4) / `POST
+        /competencies/{id}/chat/messages` (AC5) uses — for a competency
+        destination that means "active room, membership NOT required"
+        (US-031 AC4). The new message carries `forwardedFrom` (the source
+        room's competency) for the FE's "Forwarded from {competency} chat"
+        attribution; the original author is never exposed. The same
+        `dm.message.created`/`competencyChat.message.created` WS push as a
+        normal send is emitted for the destination.
+      operationId: createChatForward
+      tags: [chat]
+      security:
+        - firebaseIdToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sourceMessageId:
+                  type: string
+                  format: uuid
+                  description: The message to forward. Must currently be a `competency_chat_messages` row.
+                destinationType:
+                  type: string
+                  enum: [dmThread, competencyChat]
+                destinationId:
+                  type: string
+                  format: uuid
+                  description: >
+                    A DM thread id (`destinationType: dmThread`) or a
+                    competency id (`destinationType: competencyChat`).
+              required: [sourceMessageId, destinationType, destinationId]
+      responses:
+        '201':
+          description: >
+            The newly created message in the destination chat — a
+            `DmMessage` or `CompetencyChatMessage` depending on
+            `destinationType`, with `forwardedFrom` populated.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DmMessage'
+                  - $ref: '#/components/schemas/CompetencyChatMessage'
+        '400':
+          description: >
+            `destinationType` is neither `dmThread` nor `competencyChat`
+            (`errors.chat.invalidDestinationType`) — a conforming client
+            never sends this.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >
+            Source message is a DM message (`errors.chat.forwardFromDmForbidden`,
+            AC2/AC7), or the caller isn't a participant of the destination DM
+            thread (`errors.dmThread.forbidden`, AC4).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: >
+            Source message exists in neither message table
+            (`errors.chat.messageNotFound`, AC3), or the destination
+            competency room is nonexistent/retired
+            (`errors.competencyChat.notFound`, AC5).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -3205,11 +3343,11 @@ components:
     TaskComment:
       type: object
       description: >
-        A `task_comments` row (US-019) — SHARED across everyone with access
-        to the task (owner/collaborator/viewer), on the same footing as
-        `tasks.status`, unlike the privacy-scoped `time_entries`. View + add
-        only this pass — no `updatedAt` (nothing ever mutates a row after
-        insert, since there's no edit endpoint).
+        A `task_comments` row (US-019/US-034) — SHARED across everyone with
+        access to the task (owner/collaborator/viewer), on the same footing
+        as `tasks.status`, unlike the privacy-scoped `time_entries`. View +
+        add only this pass — no `updatedAt` (nothing ever mutates a row
+        after insert, since there's no edit endpoint).
       properties:
         id:
           type: string
@@ -3229,10 +3367,34 @@ components:
         body:
           type: string
           maxLength: 2000
+        parentCommentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            US-034 — the REAL tree edge (max depth 3, enforced by the
+            flatten algorithm below, not a DB constraint). `null` for a
+            top-level comment. The FE builds the visual nesting/grouping
+            EXCLUSIVELY from this field's parent chain — never from
+            `replyToCommentId`.
+        replyToCommentId:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            US-034 AC1-3 — the exact comment the author clicked "Reply" on;
+            used ONLY to render the "In reply to {author}: «{excerpt}»"
+            quote preview. Equals `parentCommentId` for a normal one-level
+            deepening (reply to a level-1 or level-2 comment), but can point
+            DEEPER than `parentCommentId` when the target was already
+            level 3: replying to a level-3 comment flattens the new comment
+            into a SIBLING under the same level-2 `parentCommentId` (no
+            level 4 is ever created), while `replyToCommentId` still names
+            the exact level-3 comment that was replied to.
         createdAt:
           type: string
           format: date-time
-      required: [id, taskId, authorId, authorName, body, createdAt]
+      required: [id, taskId, authorId, authorName, body, parentCommentId, replyToCommentId, createdAt]
 
     ShareWriteRequest:
       type: object
@@ -3368,11 +3530,51 @@ components:
           format: date-time
       required: [id, competencyId, competencySlug, otherUser, lastMessage, createdAt]
 
+    ChatMessageReplyPreview:
+      type: object
+      description: >
+        US-035 AC5/AC6 — the hydrated quote a replying message carries, so
+        the FE can render the quote block without a follow-up request for
+        the original. `null` on a message that isn't a reply. Present
+        identically on `GET .../messages` history and on the
+        `dm.message.created`/`competencyChat.message.created` WS push.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The original (quoted) message's id — click-to-scroll target in the FE.
+        authorName:
+          type: string
+          description: AUTH-004 AC5/AC6 publicName-falls-back-to-displayName of the quoted message's sender.
+        excerpt:
+          type: string
+          description: First ~80 characters of the quoted message's body (plain slice, no ellipsis).
+      required: [id, authorName, excerpt]
+
+    ChatForwardSource:
+      type: object
+      description: >
+        US-036 AC6 — attribution shown above a forwarded message's body:
+        "Forwarded from {competency} chat". `null` unless this message was
+        created by a forward FROM a competency chat room. NEVER populated
+        from a DM source — forwarding a DM message is forbidden by design
+        (US-036 AC2), so the original author is deliberately never exposed
+        (the message's `senderId` is always the forwarder).
+      properties:
+        competencyId:
+          type: string
+          format: uuid
+        competencySlug:
+          type: string
+          nullable: true
+          description: Locale key `competency.<slug>` for the source room's display name.
+      required: [competencyId, competencySlug]
+
     DmMessage:
       type: object
       description: >
-        A `dm_messages` row (US-027). View + add only — no `updatedAt`
-        (same MVP scope decision as `TaskComment`/`CompetencyChatMessage`).
+        A `dm_messages` row (US-027/US-035/US-036). View + add only — no
+        `updatedAt` (same MVP scope decision as `TaskComment`/`CompetencyChatMessage`).
       properties:
         id:
           type: string
@@ -3389,17 +3591,25 @@ components:
         body:
           type: string
           maxLength: 2000
+        replyTo:
+          allOf:
+            - $ref: '#/components/schemas/ChatMessageReplyPreview'
+          nullable: true
+        forwardedFrom:
+          allOf:
+            - $ref: '#/components/schemas/ChatForwardSource'
+          nullable: true
         createdAt:
           type: string
           format: date-time
-      required: [id, threadId, senderId, senderName, body, createdAt]
+      required: [id, threadId, senderId, senderName, body, replyTo, forwardedFrom, createdAt]
 
     CompetencyChatMessage:
       type: object
       description: >
-        A `competency_chat_messages` row (US-028) — the shared room
-        identified by `competencyId` (no separate "rooms" resource). View +
-        add only, same MVP scope as `DmMessage`/`TaskComment`.
+        A `competency_chat_messages` row (US-028/US-035/US-036) — the shared
+        room identified by `competencyId` (no separate "rooms" resource).
+        View + add only, same MVP scope as `DmMessage`/`TaskComment`.
       properties:
         id:
           type: string
@@ -3416,10 +3626,18 @@ components:
         body:
           type: string
           maxLength: 2000
+        replyTo:
+          allOf:
+            - $ref: '#/components/schemas/ChatMessageReplyPreview'
+          nullable: true
+        forwardedFrom:
+          allOf:
+            - $ref: '#/components/schemas/ChatForwardSource'
+          nullable: true
         createdAt:
           type: string
           format: date-time
-      required: [id, competencyId, senderId, senderName, body, createdAt]
+      required: [id, competencyId, senderId, senderName, body, replyTo, forwardedFrom, createdAt]
 
     CompetencyChatMembership:
       type: object
@@ -3590,6 +3808,12 @@ security:
 # shapes as the `DmMessage`/`CompetencyChatMessage` schemas defined under
 # `components.schemas` for the REST endpoints — the WS push is the identical
 # object the matching POST endpoint just returned, not a separate shape.
+# This includes the US-035 `replyTo` (`{id, authorName, excerpt}` or `null`)
+# and US-036 `forwardedFrom` (`{competencyId, competencySlug}` or `null`)
+# fields — both are already hydrated on the pushed object (US-035 AC5), so a
+# live quote block / forward attribution renders with no follow-up request.
+# A forward (`POST /chat/forwards`) emits the same `*.message.created` event
+# for its destination chat as a normal send does.
 #
 # What FE needs to know to wire this up (frontend-developer, US-027/US-028):
 #   - Connect once per session: `new WebSocket(`${WS_BASE_URL}/ws?token=${idToken}`)`.

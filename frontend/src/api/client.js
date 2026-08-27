@@ -257,8 +257,15 @@ export function listTaskComments(idToken, taskId) {
   return request(`/tasks/${taskId}/comments`, { idToken });
 }
 
-export function createTaskComment(idToken, taskId, { body }) {
-  return request(`/tasks/${taskId}/comments`, { method: 'POST', idToken, body: { body } });
+// `replyToCommentId` (US-034) is optional — the comment the author clicked
+// "Reply" on. The BE derives the stored `parentCommentId` from it via the
+// flatten-on-level-3 algorithm; the FE just forwards the exact target id.
+export function createTaskComment(idToken, taskId, { body, replyToCommentId } = {}) {
+  return request(`/tasks/${taskId}/comments`, {
+    method: 'POST',
+    idToken,
+    body: replyToCommentId ? { body, replyToCommentId } : { body },
+  });
 }
 
 // --- Profile & competencies (AUTH-004..AUTH-007) ---
@@ -335,8 +342,14 @@ export function listDmThreadMessages(idToken, threadId) {
   return request(`/dm-threads/${threadId}/messages`, { idToken });
 }
 
-export function createDmThreadMessage(idToken, threadId, { body }) {
-  return request(`/dm-threads/${threadId}/messages`, { method: 'POST', idToken, body: { body } });
+// `replyToMessageId` (US-035) is optional — a flat quote-reply pointer to a
+// message in this same thread.
+export function createDmThreadMessage(idToken, threadId, { body, replyToMessageId } = {}) {
+  return request(`/dm-threads/${threadId}/messages`, {
+    method: 'POST',
+    idToken,
+    body: replyToMessageId ? { body, replyToMessageId } : { body },
+  });
 }
 
 // --- Competency group chat (US-028) ---
@@ -348,8 +361,26 @@ export function listCompetencyChatMessages(idToken, competencyId) {
   return request(`/competencies/${competencyId}/chat/messages`, { idToken });
 }
 
-export function createCompetencyChatMessage(idToken, competencyId, { body }) {
-  return request(`/competencies/${competencyId}/chat/messages`, { method: 'POST', idToken, body: { body } });
+export function createCompetencyChatMessage(idToken, competencyId, { body, replyToMessageId } = {}) {
+  return request(`/competencies/${competencyId}/chat/messages`, {
+    method: 'POST',
+    idToken,
+    body: replyToMessageId ? { body, replyToMessageId } : { body },
+  });
+}
+
+// --- Chat forwards (US-036) ---
+// POST /chat/forwards — copy a competency-chat message's body into a new
+// message in another chat. `destinationType` is 'dmThread' | 'competencyChat',
+// `destinationId` the matching thread/competency id. Forwarding a DM message
+// is rejected by the BE (403 errors.chat.forwardFromDmForbidden) — the FE
+// never even shows a Forward control on DM messages.
+export function createChatForward(idToken, { sourceMessageId, destinationType, destinationId }) {
+  return request('/chat/forwards', {
+    method: 'POST',
+    idToken,
+    body: { sourceMessageId, destinationType, destinationId },
+  });
 }
 
 // --- Competency chat membership (US-031/032/033) ---
