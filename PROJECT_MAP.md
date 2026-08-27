@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-26 — персистентне членство в чаті компетенції (join/leave), екран "Знайти чати", розширення розділу "Повідомлення" секцією чатів компетенцій (US-030…US-033), новий вузол `DB_CompetencyChatMembers` у Рядку 4.
+Останнє оновлення: 2026-08-27 — відповіді на коментарі таски (3 рівні, flatten) та reply/forward у чаті DM/компетенції (US-034…US-036); нові вузли `BE_ChatForwards`, `FE_ChatConversation`, `FE_ForwardMessageModal` у Рядку 4, нові reply/forward-колонки на `task_comments`/`dm_messages`/`competency_chat_messages`.
 
 ## Легенда
 
@@ -136,7 +136,7 @@ graph TD
     BE_TimeEntries["🟩 BE_TimeEntries<br/>/tasks/:id/time-entries"]
     BE_TaskShares["🟩 BE_TaskShares<br/>/tasks/:id/shares CRUD<br/>+ GET /tasks/:id"]
     BE_Attachments["🟩 BE_Attachments<br/>/tasks/:id/attachments<br/>+ signed URL"]
-    BE_TaskComments["🟩 BE_TaskComments<br/>GET+POST<br/>/tasks/:id/comments"]
+    BE_TaskComments["🟩 BE_TaskComments<br/>GET+POST<br/>/tasks/:id/comments<br/>+ replyToCommentId<br/>(flatten на рівні 3)"]
     BE_TeamView["⬜ BE_TeamView<br/>агрегація team view"]
   end
 
@@ -145,7 +145,7 @@ graph TD
     DB_TaskShares["🟩 DB_TaskShares<br/>task_shares"]
     DB_Attachments["🟩 DB_Attachments<br/>attachments"]
     DB_AttachmentViewers["🟩 DB_AttachmentViewers<br/>attachment_viewers<br/>(схема, без FE-консюмера)"]
-    DB_TaskComments["🟩 DB_TaskComments<br/>task_comments"]
+    DB_TaskComments["🟩 DB_TaskComments<br/>task_comments<br/>+ parent_comment_id<br/>+ reply_to_comment_id"]
   end
 
   subgraph Infra["Infra"]
@@ -183,20 +183,23 @@ graph TD
     FE_PeopleSearch["🟩 FE_PeopleSearch<br/>/people: пошук за<br/>компетенцією, willing_to_teach"]
     FE_UserProfile["🟩 FE_UserProfile<br/>/users/:id: чужий профіль,<br/>кнопка Написати повідомлення"]
     FE_Chat["🟩 FE_Chat<br/>/messages (+ секція<br/>Чати компетенцій),<br/>/messages/:threadId,<br/>/competencies/:id/chat<br/>(+ join/leave),<br/>/chats/find"]
+    FE_ChatConversation["🟩 FE_ChatConversation<br/>спільний список повідомлень<br/>+ композер, quote-блок,<br/>click-to-scroll<br/>(DM + компетенція)"]
+    FE_ForwardMessageModal["🟩 FE_ForwardMessageModal<br/>вибір призначення форварда:<br/>мої DM + приєднані чати<br/>+ пошук усіх активних"]
   end
 
   subgraph BE["Backend (Node.js REST /api/v1 + WS)"]
     BE_UserSearch["🟩 BE_UserSearch<br/>GET /users/search,<br/>GET /users/:id"]
-    BE_DmThreads["🟩 BE_DmThreads<br/>POST+GET /dm-threads,<br/>GET+POST /dm-threads/:id/messages"]
-    BE_CompetencyChat["🟩 BE_CompetencyChat<br/>GET+POST<br/>/competencies/:id/chat/messages,<br/>POST+DELETE<br/>.../chat/members[/me],<br/>GET /competency-chats/mine"]
+    BE_DmThreads["🟩 BE_DmThreads<br/>POST+GET /dm-threads,<br/>GET+POST /dm-threads/:id/messages<br/>+ replyToMessageId / replyTo"]
+    BE_CompetencyChat["🟩 BE_CompetencyChat<br/>GET+POST<br/>/competencies/:id/chat/messages<br/>(+ replyToMessageId / replyTo),<br/>POST+DELETE<br/>.../chat/members[/me],<br/>GET /competency-chats/mine"]
+    BE_ChatForwards["🟩 BE_ChatForwards<br/>POST /chat/forwards<br/>джерело: лише чат компетенції,<br/>DM-джерело дає 403<br/>(транзитивно, за таблицею)"]
     BE_Websocket["🟩 BE_Websocket<br/>WS auth (Firebase token),<br/>subscribe authz, broadcast"]
   end
 
   subgraph DB["PostgreSQL"]
     DB_Users["🟩 DB_Users<br/>(users, див. Рядок 1)"]
     DB_DmThreads["🟩 DB_DmThreads<br/>dm_threads (user_a_id,<br/>user_b_id, competency_id,<br/>unique пара+компетенція)"]
-    DB_DmMessages["🟩 DB_DmMessages<br/>dm_messages"]
-    DB_CompetencyChatMessages["🟩 DB_CompetencyChatMessages<br/>competency_chat_messages"]
+    DB_DmMessages["🟩 DB_DmMessages<br/>dm_messages<br/>+ reply_to_message_id<br/>+ forwarded_from_competency_id"]
+    DB_CompetencyChatMessages["🟩 DB_CompetencyChatMessages<br/>competency_chat_messages<br/>+ reply_to_message_id<br/>+ forwarded_from_competency_id"]
     DB_CompetencyChatMembers["🟩 DB_CompetencyChatMembers<br/>competency_chat_members<br/>(user_id, competency_id,<br/>joined_at, unique)"]
   end
 
@@ -210,7 +213,12 @@ graph TD
   FE_UserProfile --> BE_DmThreads
   FE_Chat --> BE_DmThreads
   FE_Chat --> BE_CompetencyChat
-  FE_Chat --> BE_Websocket
+  FE_Chat --> FE_ChatConversation
+  FE_Chat --> FE_ForwardMessageModal
+  FE_ChatConversation --> BE_DmThreads
+  FE_ChatConversation --> BE_CompetencyChat
+  FE_ChatConversation --> BE_Websocket
+  FE_ForwardMessageModal --> BE_ChatForwards
 
   BE_UserSearch --> DB_Users
   BE_DmThreads --> DB_DmThreads
@@ -219,9 +227,11 @@ graph TD
   BE_CompetencyChat --> DB_CompetencyChatMessages
   BE_CompetencyChat --> DB_CompetencyChatMembers
   BE_CompetencyChat --> BE_Websocket
+  BE_ChatForwards --> BE_DmThreads
+  BE_ChatForwards --> BE_CompetencyChat
   BE_Websocket --> Infra_WebSocket
 
-  class FE_PeopleSearch,FE_UserProfile,FE_Chat,BE_UserSearch,BE_DmThreads,BE_CompetencyChat,BE_Websocket,DB_Users,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,DB_CompetencyChatMembers,Infra_WebSocket done;
+  class FE_PeopleSearch,FE_UserProfile,FE_Chat,FE_ChatConversation,FE_ForwardMessageModal,BE_UserSearch,BE_DmThreads,BE_CompetencyChat,BE_ChatForwards,BE_Websocket,DB_Users,DB_DmThreads,DB_DmMessages,DB_CompetencyChatMessages,DB_CompetencyChatMembers,Infra_WebSocket done;
 ```
 
 ## Схема БД (таблиці горизонтально, FK-звʼязки вертикально)
@@ -236,9 +246,9 @@ graph TD
   DB_TaskShares["🟩 task_shares<br/>task_id, user_id, role"]
   DB_AttachmentViewers["🟩 attachment_viewers<br/>attachment_id, user_id"]
   DB_UserCompetencies["🟩 user_competencies<br/>user_id, competency_id,<br/>is_custom, willing_to_teach"]
-  DB_TaskComments["🟩 task_comments<br/>task_id, author_id,<br/>body, created_at"]
+  DB_TaskComments["🟩 task_comments<br/>task_id, author_id, body, created_at,<br/>parent_comment_id, reply_to_comment_id"]
   DB_BoardLanguages["🟩 board_languages<br/>board_id, language_id"]
-  DB_DmMessages["🟩 dm_messages<br/>thread_id, sender_id,<br/>body, created_at"]
+  DB_DmMessages["🟩 dm_messages<br/>thread_id, sender_id, body, created_at,<br/>reply_to_message_id,<br/>forwarded_from_competency_id"]
   DB_CompetencyChatMembers["🟩 competency_chat_members<br/>user_id, competency_id,<br/>joined_at, unique"]
 
   DB_Users["🟩 users<br/>id, email, display_name,<br/>public_name, locale,<br/>last_sign_in_provider"]
@@ -247,7 +257,7 @@ graph TD
   DB_Competencies["🟩 competencies<br/>slug, is_active"]
   DB_Languages["🟩 languages<br/>slug, is_active"]
   DB_DmThreads["🟩 dm_threads<br/>user_a_id, user_b_id,<br/>competency_id,<br/>unique пара+компетенція"]
-  DB_CompetencyChatMessages["🟩 competency_chat_messages<br/>competency_id, sender_id,<br/>body, created_at"]
+  DB_CompetencyChatMessages["🟩 competency_chat_messages<br/>competency_id, sender_id, body, created_at,<br/>reply_to_message_id,<br/>forwarded_from_competency_id"]
 
   DB_Tasks["🟩 tasks<br/>board_id, title,<br/>status, position,<br/>planned_minutes"]
 
@@ -265,6 +275,7 @@ graph TD
   DB_UserCompetencies -.FK, nullable.-> DB_Competencies
   DB_TaskComments -->|FK, CASCADE| DB_Tasks
   DB_TaskComments -->|FK| DB_Users
+  DB_TaskComments -.FK self, parent CASCADE / reply_to SET NULL.-> DB_TaskComments
   DB_BoardLanguages -->|FK| DB_Boards
   DB_BoardLanguages -->|FK| DB_Languages
   DB_Attachments -->|FK| DB_Tasks
@@ -274,8 +285,12 @@ graph TD
   DB_DmThreads -->|FK| DB_Competencies
   DB_DmMessages -->|FK| DB_DmThreads
   DB_DmMessages -->|FK| DB_Users
+  DB_DmMessages -.FK self, SET NULL.-> DB_DmMessages
+  DB_DmMessages -.FK, nullable (forwarded_from).-> DB_Competencies
   DB_CompetencyChatMessages -->|FK| DB_Competencies
   DB_CompetencyChatMessages -->|FK| DB_Users
+  DB_CompetencyChatMessages -.FK self, SET NULL.-> DB_CompetencyChatMessages
+  DB_CompetencyChatMessages -.FK, nullable (forwarded_from).-> DB_Competencies
   DB_CompetencyChatMembers -->|FK| DB_Users
   DB_CompetencyChatMembers -->|FK| DB_Competencies
 
@@ -317,3 +332,11 @@ graph TD
   - **Вихід із чату — hard delete**, не soft-delete/архівація, на відміну від "не каскадне видалення", застосованого до суміжних сутностей (`user_competencies`/`board.category_id`/`competency_chat_messages`): те правило стосується каскадного видалення при деактивації батьківської компетенції (рядок членства НЕ видаляється каскадно), а не самої дії виходу користувача (яка завжди hard delete власного рядка) — членство це поточний стан підписки, не історичний запис.
   - Tester: чистий PASS без знайдених багів — включно з найризикованішим сценарієм (join поки компетенція активна → пряма деактивація в БД → leave все одно проходить, US-031 AC3/AC7), unique constraint під реальним паралельним HTTP-навантаженням (5 паралельних `POST` → 1 рядок, `backend/test/concurrency/competencyChatMembers.test.js`), повний браузерний клік-тест (Playwright) обох нових екранів. i18n-гейт зелений (365 ключів), backend test suite 140/140.
   - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 і US-025…029 (двічі раніше): формулювання для розділів "Екрани"/"Дані" підготовлені бізнес-аналітиком у `USER_STORIES.md` (розділ "походження" перед US-030), застосування — окремий крок, коли попросять.
+- З фічі "Відповіді на коментарі таски + reply/forward у чаті" (2026-08-27, US-034…US-036): розширення двох областей одразу — коментарі таски (Рядок 3) і месенджинг (Рядок 4), усі зачеплені вузли вже були 🟩 `done`, статуси не змінювались — фіча повністю лягла в наявні вузли плюс три нові.
+  - **US-034 (Рядок 3)** — `task_comments` доповнено двома self-FK: `parent_comment_id` (реальне дерево, ON DELETE CASCADE, max глибина 3) і `reply_to_comment_id` (текстова адресація "у відповідь", ON DELETE SET NULL, може вказувати глибше за `parent_comment_id` у разі flatten рівня 3). BE: `resolveReplyTarget()` (flatten-on-level-3) в `taskComments.service.js`, `POST /tasks/:id/comments` приймає опційний `replyToCommentId`, `GET` віддає `parentCommentId`/`replyToCommentId`; нова помилка `errors.comment.replyTargetInvalid`. Список і далі плаский масив у хронологічному порядку — дерево (`buildCommentTree`, візуальні глибини 0/1/2, інлайн quote-прев'ю) будує FE в `TaskPanel.jsx`. Лейбли `BE_TaskComments`/`DB_TaskComments` доповнено, нового вузла не заведено (розширення контракту вже done-вузла, той самий принцип, що AUTH-004…008 / US-020). На схемі БД додано self-FK-ребро `DB_TaskComments -.-> DB_TaskComments`.
+  - **US-035 (Рядок 4)** — `dm_messages` + `competency_chat_messages` кожна отримали `reply_to_message_id` (плаский quote-вказівник у межах того самого треду/кімнати, ON DELETE SET NULL). Новий спільний модуль `backend/src/lib/chatMessages.js` (`resolveReplyTarget()` + батчений `fetchReplyPreviews()`) — деталь реалізації всередині `BE_DmThreads`/`BE_CompetencyChat`, окремого вузла не заведено (той самий принцип, що `lib/authz.js`/`lib/db.js` — карта не подрібнюється нижче рівня ендпоінтів/сервісів). `createMessage` в обох сервісах приймає `replyToMessageId`; `listMessages` і WS-події `*.message.created` несуть гідратований `replyTo: {id, authorName, excerpt}`; нова помилка `errors.chat.replyTargetInvalid`. Лейбли `BE_DmThreads`/`BE_CompetencyChat`/`DB_DmMessages`/`DB_CompetencyChatMessages` доповнено.
+  - **US-036 (Рядок 4)** — новий вузол `BE_ChatForwards` (🟩 `done`): `POST /api/v1/chat/forwards {sourceMessageId, destinationType, destinationId}`, окремий файл `backend/src/routes/chatForwards.route.js` + сервіс `chatForwards.service.js`. Заведено окремим вузлом (не розширенням `BE_DmThreads`/`BE_CompetencyChat`), бо це нова крос-чатова доменна операція з власним контрактом і власною забороною — той самий бар, що свого часу створив `BE_CompetencyChat` окремо від `BE_Competencies`. Ключове правило: джерело форварду має ПОТОЧНО лежати в `competency_chat_messages`; форвард із `dm_messages` → 403 `errors.chat.forwardFromDmForbidden`, **транзитивно** (переслане в DM повідомлення стає `dm_messages`-рядком і далі не форвардиться — перевірка за таблицею поточного розташування, не за історією). `dm_messages` + `competency_chat_messages` отримали `forwarded_from_competency_id` (nullable FK → `competencies`, ON DELETE SET NULL). Авторизація призначення — reuse `requireDmThreadAccess` / `requireActiveCompetencyRoom` (мембершип у чаті компетенції НЕ потрібен для призначення, прецедент US-031 AC4). `BE_ChatForwards` делегує створення повідомлення сервісам `BE_DmThreads`/`BE_CompetencyChat` (`createForwardedMessage()`) — тому на карті ребра `BE_ChatForwards --> BE_DmThreads` / `--> BE_CompetencyChat`, а не прямі до БД/WS (ті вже висять на цільових вузлах). Нові помилки `errors.chat.messageNotFound`, `errors.chat.invalidDestinationType` (остання додана розробником понад спеку BA, косметична валідація вхідних даних).
+  - **Нові FE-вузли (Рядок 4)**: `FE_ChatConversation` (🟩 `done`) — спільний список повідомлень + композер для обох чат-екранів (`ChatConversation.jsx` + `.module.css`), quote-блок з click-to-scroll; використовується з `DmThreadPage.jsx` і `CompetencyChatPage.jsx`. Заведений окремим вузлом за прецедентом `FE_SharePanel` — один реюзабельний компонент, що обслуговує кілька контекстів; прямі ребра `FE_Chat --> BE_DmThreads/BE_CompetencyChat/BE_Websocket` для надсилання/списку повідомлень і живого каналу замінені на прохід через `FE_ChatConversation` (ребро `FE_Chat --> BE_Websocket` прибрано, тепер `FE_ChatConversation --> BE_Websocket`); `FE_Chat` зберігає прямі ребра до `BE_DmThreads`/`BE_CompetencyChat` для списків тредів/кімнат і join/leave. `FE_ForwardMessageModal` (🟩 `done`) — модалка вибору призначення (`ForwardMessageModal.jsx` + `.module.css`): мої DM + приєднані чати компетенцій + пошук усіх активних; ребро `FE_ForwardMessageModal --> BE_ChatForwards`. Кнопка "Переслати" присутня на кожному повідомленні чату компетенції, **відсутня** (не задизейблена) на DM-повідомленнях (US-036 AC12).
+  - Інші спільні FE-деталі (без вузлів): `frontend/src/lib/chatExcerpt.js` (спільний 80-символьний `replyExcerpt`), `frontend/src/api/client.js` (reply-параметри + `createChatForward`), нові locale-ключі під `taskPanel.comments.*`, `chat.message.*`, `chat.forward.*`, `errors.comment.*`, `errors.chat.*` (EN/UK повні).
+  - Code review: **Approve with comments** — усі зауваження враховані до фіналізації, нових "відомих прогалин" не залоговано.
+  - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 / US-025…029 / US-030…033: формулювання для розділів "Дані"/"Екрани" підготовлені бізнес-аналітиком у `USER_STORIES.md` (розділи "походження" перед US-034 і US-035…036), застосування — окремий крок, коли попросять.

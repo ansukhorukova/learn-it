@@ -698,3 +698,78 @@ PROJECT_MAP.md — історія змін
     розробці" на "✅ Готово (пройшло code review)", дата 2026-08-26.
   Коміт: docs: update PROJECT_MAP.md — персистентне членство в чаті
     компетенції (join/leave), екран "Знайти чати" (US-030…US-033)
+
+2026-08-27 — Відповіді на коментарі таски + reply/forward у чаті
+             (US-034…US-036, code review: Approve with comments)
+  Жодного статусу не змінено — усі зачеплені вузли вже були 🟩 done.
+    Фіча = розширення наявних вузлів + 3 нові вузли в Рядку 4.
+  Рядок 3 (коментарі таски, US-034):
+    - BE_TaskComments — лейбл доповнено "+ replyToCommentId
+      (flatten на рівні 3)"; POST /tasks/:id/comments приймає
+      опційний replyToCommentId, GET віддає parentCommentId/
+      replyToCommentId; нова помилка errors.comment.replyTargetInvalid.
+    - DB_TaskComments — лейбл доповнено "+ parent_comment_id,
+      + reply_to_comment_id" (self-FK: parent ON DELETE CASCADE,
+      max глибина 3; reply_to ON DELETE SET NULL, може вказувати
+      глибше за parent при flatten рівня 3).
+    - FE-дерево (buildCommentTree, візуальні глибини 0/1/2, інлайн
+      quote-прев'ю) — у TaskPanel.jsx, деталь всередині FE_TaskPanel,
+      нового вузла не заведено.
+  Рядок 4 (чат reply/forward, US-035/036):
+    - Нові вузли:
+      * BE_ChatForwards — 🟩 done. POST /api/v1/chat/forwards
+        {sourceMessageId, destinationType, destinationId}, окремий
+        файл chatForwards.route.js + chatForwards.service.js.
+        Окремий вузол (не розширення BE_DmThreads/BE_CompetencyChat),
+        бо нова крос-чатова доменна операція з власним контрактом —
+        той самий бар, що BE_CompetencyChat vs BE_Competencies.
+        Ребра: FE_ForwardMessageModal --> BE_ChatForwards;
+        BE_ChatForwards --> BE_DmThreads / --> BE_CompetencyChat
+        (делегує createForwardedMessage(), БД/WS уже на цільових).
+      * FE_ChatConversation — 🟩 done. Спільний список повідомлень
+        + композер для обох чат-екранів (ChatConversation.jsx),
+        quote-блок з click-to-scroll; використовується з
+        DmThreadPage.jsx і CompetencyChatPage.jsx. Заведений
+        окремим вузлом за прецедентом FE_SharePanel (один
+        реюзабельний компонент на кілька контекстів).
+      * FE_ForwardMessageModal — 🟩 done. Модалка вибору
+        призначення (мої DM + приєднані чати компетенцій + пошук
+        усіх активних). Кнопка "Переслати" на кожному повідомленні
+        чату компетенції, відсутня (не задизейблена) на DM.
+    - Ребра FE_Chat --> BE_DmThreads/BE_CompetencyChat/BE_Websocket
+      для надсилання/списку повідомлень і живого каналу замінені
+      на прохід через FE_ChatConversation (FE_Chat --> BE_Websocket
+      прибрано → FE_ChatConversation --> BE_Websocket); FE_Chat
+      зберігає прямі ребра до BE_DmThreads/BE_CompetencyChat для
+      списків тредів/кімнат і join/leave.
+    - Розширено без нового вузла:
+      * BE_DmThreads / BE_CompetencyChat — "+ replyToMessageId /
+        replyTo"; createMessage приймає replyToMessageId,
+        listMessages + WS *.message.created несуть replyTo
+        {id, authorName, excerpt}; нова помилка
+        errors.chat.replyTargetInvalid.
+      * DB_DmMessages / DB_CompetencyChatMessages — "+ reply_to_
+        message_id" (self-FK, ON DELETE SET NULL, той самий
+        thread_id/competency_id) і "+ forwarded_from_competency_id"
+        (nullable FK → competencies, ON DELETE SET NULL).
+    - backend/src/lib/chatMessages.js (resolveReplyTarget +
+      батчений fetchReplyPreviews) — деталь всередині
+      BE_DmThreads/BE_CompetencyChat, окремого вузла не заведено
+      (принцип lib/authz.js/lib/db.js).
+  Схема БД: додано self-FK-ребра DB_TaskComments -.-> DB_TaskComments,
+    DB_DmMessages -.-> DB_DmMessages, DB_CompetencyChatMessages -.->
+    DB_CompetencyChatMessages; нові nullable-ребра DB_DmMessages /
+    DB_CompetencyChatMessages -.forwarded_from.-> DB_Competencies;
+    лейбли трьох таблиць доповнено новими колонками.
+  Відомих прогалин не залоговано — code review Approve with comments,
+    усі зауваження враховані до фіналізації.
+  CLAUDE.md текстом НЕ оновлено цим проходом — прецедент US-021…024 /
+    US-025…029 / US-030…033: формулювання підготовлені BA в
+    USER_STORIES.md ("походження" перед US-034 і US-035…036),
+    застосування — окремий крок.
+  USER_STORIES.md: US-034…US-036 переведено з "🔨 Реалізовано
+    (очікує тестування + code review)" на "✅ Готово (пройшло code
+    review)", дата 2026-08-27; списки вузлів US-035/036 доповнено
+    новими FE/BE-вузлами.
+  Коміт: docs: update PROJECT_MAP.md — відповіді на коментарі таски
+    та reply/forward у чаті (US-034…US-036)
