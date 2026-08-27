@@ -773,3 +773,61 @@ PROJECT_MAP.md — історія змін
     новими FE/BE-вузлами.
   Коміт: docs: update PROJECT_MAP.md — відповіді на коментарі таски
     та reply/forward у чаті (US-034…US-036)
+
+2026-08-27 — Імпорт дошки з файлу (US-037 BE + US-038 FE,
+             code review: Approve with comments, коміт ca0f727)
+  Жодного наявного статусу не змінено — усі зачеплені вузли Рядка 2
+    (FE_Boards, BE_Boards, BE_Languages, DB_Boards, DB_Tasks,
+    DB_BoardLanguages, DB_Languages) вже були 🟩 done. Фіча = 2 нові
+    вузли + повтор DB_Attachments у Рядку 2.
+  Додано нові вузли (Рядок 2 — Boards/Board view/шеринг борду):
+    - BE_BoardImport — 🟩 done. POST /api/v1/boards/import: одна
+      транзакція board + tasks + note-attachments з розпарсованого
+      JSON; уся валідація ДО відкриття транзакції (часткового
+      імпорту не буває); slug→id резолв competencies/languages;
+      власний 1 МБ JSON-парсер, змонтований ПЕРЕД глобальним
+      express.json(); warnings[] ({code, params}) поруч із 201.
+      Окремий файл boardImport.route.js + boardImport.service.js.
+      Заведений окремим вузлом (не розширення BE_Boards) — інша
+      форма тіла, інша відповідь, транзакційне bulk-створення; той
+      самий бар, що BE_ChatForwards vs BE_DmThreads.
+    - FE_BoardImport — 🟩 done. ImportBoardModal.jsx (+ .module.css):
+      вибір .json → FileReader + JSON.parse → легка структурна
+      перевірка (ті самі locale-ключі) → прев'ю → сабміт; блок
+      warnings / банер success на BoardViewPage через router state.
+      Точка входу — кнопка "Імпортувати з файлу" в секції "Мої
+      дошки" поряд зі "Створити борд".
+  Нові ребра (Рядок 2): FE_Boards --> FE_BoardImport -->
+    BE_BoardImport; BE_BoardImport --> DB_Boards / DB_Tasks /
+    DB_BoardLanguages / DB_Languages / DB_Attachments. BE→DB напряму
+    (не BE→BE) — сервіс робить власні INSERT-и в одній транзакції,
+    не делегує createBoard/createTask (реюзає лише toBoardSummary);
+    на відміну від прецеденту BE_ChatForwards, який делегує.
+  Повторено (не новий вузол): DB_Attachments показаний вдруге в
+    Рядку 2 (з'єднаний з BE_BoardImport, лейбл "див. Рядок 3") —
+    той самий принцип повтору, що Infra_MinIO/DB_Users/FE_SharePanel;
+    імпорт реально пише kind='note'/visibility='private'-рядки в ту
+    саму таблицю attachments. BE_Attachments/Infra_MinIO не задіяні
+    (note-вкладення без файлового об'єкта в сховищі).
+  Резолв board.category slug → competencies.id: ребро до Рядка 1 /
+    DB_Competencies навмисно НЕ проведено (міжрядкові стрілки на
+    карті не малюються) — дзеркалить те, що власний category-резолв
+    BE_Boards теж не має намальованого ребра в Рядку 2; звʼязок
+    присутній лише в ER-схемі БД (DB_Boards -.-> DB_Competencies,
+    US-021).
+  Схема БД (окрема ER-діаграма) НЕ змінена — фіча свідомо без
+    міграції (US-037 AC9): реюз boards/tasks/attachments/
+    board_languages/competencies/languages як є, без нових колонок
+    чи таблиць. Жоден вузол ER-схеми не додано й не перейменовано.
+  Нових "відомих прогалин" не залоговано — code review Approve with
+    comments, усі зауваження враховані до фіналізації.
+  CLAUDE.md текстом НЕ оновлено цим проходом — прецедент US-021…024 /
+    US-025…029 / US-030…033 / US-034…036: підготовлені формулювання
+    для розділів "API"/"Екрани" п.2/"Поведінка" — у записі
+    US-037…US-038 в USER_STORIES.md; застосування — окремий крок.
+  README.md: застарілий рядок "Project status" оновлено до
+    фактичного стану (додано board import + перелік готових областей).
+  USER_STORIES.md: US-037, US-038 переведено з "🔧 У розробці" на
+    "✅ Готово (пройшло code review)", дата 2026-08-27.
+  Коміт: docs: update PROJECT_MAP.md — імпорт дошки з файлу
+    (US-037, US-038)

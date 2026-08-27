@@ -59,4 +59,4 @@ curl http://localhost:4000/api/v1/health
 
 ## Project status
 
-See [PROJECT_MAP.md](./PROJECT_MAP.md) for the current build state (Docker scaffold and `/auth` are done; boards, task panel, time tracking, attachments, and sharing are planned).
+See [PROJECT_MAP.md](./PROJECT_MAP.md) for the current build state (auth, boards + public boards, board view, task panel with time tracking / attachments / comments, board & task sharing, user profiles & competencies, people search, DM & competency chat with reply/forward, and board import from file are done; "Shared with me" and team view are still planned).

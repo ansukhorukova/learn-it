@@ -50,8 +50,8 @@
 | US-034 | Відповіді на коментарі таски (3 рівні вкладеності, flatten) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_TaskPanel, BE_TaskComments, DB_TaskComments |
 | US-035 | Відповідь (quote-style) на повідомлення в чаті (DM + компетенція) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Chat, FE_ChatConversation, BE_DmThreads, BE_CompetencyChat, DB_DmMessages, DB_CompetencyChatMessages, Infra_WebSocket |
 | US-036 | Форвард повідомлень (лише з чату компетенції, заборонено з DM) | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Chat, FE_ChatConversation, FE_ForwardMessageModal, BE_ChatForwards, BE_DmThreads, BE_CompetencyChat, DB_DmMessages, DB_CompetencyChatMessages |
-| US-037 | Імпорт дошки з файлу: транзакційне створення на бекенді | 🔧 У розробці | 2026-08-27 | FE_Boards, BE_BoardImport, BE_Boards, BE_Competencies, BE_Languages, DB_Boards, DB_Tasks, DB_Attachments |
-| US-038 | Імпорт дошки з файлу: точка входу і клієнтський флоу | 🔧 У розробці | 2026-08-27 | FE_BoardImport, FE_Boards, BE_BoardImport |
+| US-037 | Імпорт дошки з файлу: транзакційне створення на бекенді | ✅ Готово (пройшло code review) | 2026-08-27 | FE_Boards, BE_BoardImport, BE_Boards, BE_Competencies, BE_Languages, DB_Boards, DB_Tasks, DB_Attachments |
+| US-038 | Імпорт дошки з файлу: точка входу і клієнтський флоу | ✅ Готово (пройшло code review) | 2026-08-27 | FE_BoardImport, FE_Boards, BE_BoardImport |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---

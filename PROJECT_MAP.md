@@ -1,6 +1,6 @@
 # PROJECT_MAP — Learning Time Tracker
 
-Останнє оновлення: 2026-08-27 — відповіді на коментарі таски (3 рівні, flatten) та reply/forward у чаті DM/компетенції (US-034…US-036); нові вузли `BE_ChatForwards`, `FE_ChatConversation`, `FE_ForwardMessageModal` у Рядку 4, нові reply/forward-колонки на `task_comments`/`dm_messages`/`competency_chat_messages`.
+Останнє оновлення: 2026-08-27 — імпорт дошки з файлу (US-037 BE + US-038 FE); нові вузли `BE_BoardImport` (`POST /boards/import` — транзакційне bulk-створення board + tasks + note-attachments із розпарсованого JSON, slug→id резолв competencies/languages, warnings[]) і `FE_BoardImport` (`ImportBoardModal`) у Рядку 2. Без міграції БД — реюз `boards`/`tasks`/`attachments` і довідників.
 
 ## Легенда
 
@@ -79,6 +79,7 @@ graph TD
 
   subgraph FE["Frontend"]
     FE_Boards["🟩 FE_Boards<br/>Boards overview: сітка<br/>Мої дошки, create/rename/delete,<br/>Public Boards + фільтри<br/>категорія/мова"]
+    FE_BoardImport["🟩 FE_BoardImport<br/>ImportBoardModal: вибір .json<br/>→ FE-парсинг + легка<br/>структурна перевірка<br/>→ прев'ю → сабміт,<br/>warnings/success на BoardView"]
     FE_Shared["⬜ FE_Shared<br/>Shared with me"]
     FE_BoardView["🟩 FE_BoardView<br/>Board view: 3 колонки,<br/>drag-and-drop + a11y select,<br/>бейджі категорії/мов,<br/>public-viewer банер"]
     FE_SharePanel["🟩 FE_SharePanel<br/>керування доступом:<br/>форма+список учасників,<br/>myRole-gating"]
@@ -86,6 +87,7 @@ graph TD
 
   subgraph BE["Backend (Node.js REST /api/v1)"]
     BE_Boards["🟩 BE_Boards<br/>/boards CRUD + myRole<br/>+ GET /boards/public<br/>+ category/visibility/languages"]
+    BE_BoardImport["🟩 BE_BoardImport<br/>POST /boards/import:<br/>одна транзакція board+tasks+<br/>note-attachments, вся валідація<br/>до транзакції, slug→id<br/>competencies/languages,<br/>1 МБ ліміт тіла, warnings[]"]
     BE_BoardMembers["🟩 BE_BoardMembers<br/>/boards/:id/members CRUD"]
     BE_Tasks["🟩 BE_Tasks<br/>/boards/:id/tasks CRUD<br/>+ статус/позиція + myRole"]
     BE_Languages["🟩 BE_Languages<br/>GET /languages"]
@@ -97,14 +99,22 @@ graph TD
     DB_Tasks["🟩 DB_Tasks<br/>tasks"]
     DB_Languages["🟩 DB_Languages<br/>languages (довідник)"]
     DB_BoardLanguages["🟩 DB_BoardLanguages<br/>board_languages"]
+    DB_Attachments["🟩 DB_Attachments<br/>attachments (див. Рядок 3) —<br/>note-вкладення з імпорту"]
   end
 
   FE_Boards --> FE_Shared
+  FE_Boards --> FE_BoardImport
   FE_Boards --> BE_Boards
   FE_Boards --> BE_Languages
+  FE_BoardImport --> BE_BoardImport
   BE_Boards --> DB_Boards
   BE_Boards --> DB_BoardLanguages
   BE_Languages --> DB_Languages
+  BE_BoardImport --> DB_Boards
+  BE_BoardImport --> DB_Tasks
+  BE_BoardImport --> DB_BoardLanguages
+  BE_BoardImport --> DB_Languages
+  BE_BoardImport --> DB_Attachments
   FE_BoardView --> FE_SharePanel
   FE_SharePanel --> BE_BoardMembers
   BE_BoardMembers --> DB_BoardMembers
@@ -113,7 +123,7 @@ graph TD
   BE_Tasks --> DB_Tasks
   BE_Tasks --> DB_Boards
 
-  class FE_Boards,FE_BoardView,FE_SharePanel,BE_Boards,BE_BoardMembers,BE_Tasks,BE_Languages,DB_Boards,DB_BoardMembers,DB_Tasks,DB_Languages,DB_BoardLanguages done;
+  class FE_Boards,FE_BoardImport,FE_BoardView,FE_SharePanel,BE_Boards,BE_BoardImport,BE_BoardMembers,BE_Tasks,BE_Languages,DB_Boards,DB_BoardMembers,DB_Tasks,DB_Languages,DB_BoardLanguages,DB_Attachments done;
   class FE_Shared planned;
 ```
 
@@ -340,3 +350,13 @@ graph TD
   - Інші спільні FE-деталі (без вузлів): `frontend/src/lib/chatExcerpt.js` (спільний 80-символьний `replyExcerpt`), `frontend/src/api/client.js` (reply-параметри + `createChatForward`), нові locale-ключі під `taskPanel.comments.*`, `chat.message.*`, `chat.forward.*`, `errors.comment.*`, `errors.chat.*` (EN/UK повні).
   - Code review: **Approve with comments** — усі зауваження враховані до фіналізації, нових "відомих прогалин" не залоговано.
   - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 / US-025…029 / US-030…033: формулювання для розділів "Дані"/"Екрани" підготовлені бізнес-аналітиком у `USER_STORIES.md` (розділи "походження" перед US-034 і US-035…036), застосування — окремий крок, коли попросять.
+- З фічі "Імпорт дошки з файлу" (2026-08-27, US-037 BE + US-038 FE, коміт `ca0f727`, code review: Approve with comments): нова, раніше відсутня в CLAUDE.md можливість — створити власний борд з усіма тасками й нотатками одним запитом із згенерованого JSON-файлу (сам Claude Skill, що робить файл з книжки, — поза цим репозиторієм; застосунок лише приймає зафіксований JSON-контракт, задокументований у записі US-037…US-038 в `USER_STORIES.md`).
+  - **Нові `done`-вузли в Рядку 2**: `BE_BoardImport` (`POST /api/v1/boards/import` — top-level ресурс-дія за прецедентом `POST /api/v1/chat/forwards` з US-036; окремий файл `backend/src/routes/boardImport.route.js` з власним 1 МБ JSON-парсером, змонтованим ПЕРЕД глобальним `express.json()`, + сервіс `backend/src/services/boardImport.service.js`) і `FE_BoardImport` (`frontend/src/components/ImportBoardModal.jsx` + `.module.css` — вибір `.json`, FE-парсинг через `FileReader`+`JSON.parse`, легка структурна перевірка з тими самими locale-ключами, крок прев'ю, сабміт; блок warnings / банер success на `BoardViewPage` через router state). `BE_BoardImport` заведений окремим вузлом (не розширенням `BE_Boards`) — інша форма тіла (вкладені board+tasks+attachments), інша відповідь (`{board, createdTaskCount, createdAttachmentCount, warnings[]}`), транзакційне створення кількох сутностей; той самий бар, що свого часу створив `BE_ChatForwards` окремо.
+  - **Без делегування до `BE_Boards`/`BE_Tasks`** — сервіс робить власні прямі `INSERT` у `boards`/`board_languages`/`tasks`/`attachments` у одній транзакції (реюзає лише `boards.service.toBoardSummary` для форми відповіді), тому на карті ребра `BE_BoardImport --> DB_Boards / DB_Tasks / DB_BoardLanguages / DB_Languages`, а не BE→BE (на відміну від прецеденту `BE_ChatForwards --> BE_DmThreads`, який делегує). Уся валідація виконується ДО відкриття транзакції — часткового імпорту не буває (той самий патерн, що `resolveCategoryId`/`resolveLanguages` у `createBoard`).
+  - **`DB_Attachments` повторений у Рядку 2** (з'єднаний з `BE_BoardImport`, лейбл "див. Рядок 3") — той самий принцип повтору вузла, що `Infra_MinIO`/`DB_Users`/`FE_SharePanel`: це та сама таблиця `attachments` з Рядка 3, показана вдруге, бо імпорт реально пише в неї `kind='note'`/`visibility='private'`-рядки, а не тому, що це інша таблиця. `BE_Attachments`/`Infra_MinIO` при цьому НЕ задіяні — note-вкладення не мають файлового об'єкта в сховищі.
+  - **Резолв `board.category` slug → `competencies.id`** — прямий `db('competencies').where({slug})` у сервісі; ребро до `competencies` (Рядок 1 / `DB_Competencies`) навмисно НЕ проведено — міжрядкові стрілки на карті не малюються, і це дзеркалить те, що власний category-резолв `BE_Boards` теж не має намальованого ребра в Рядку 2 (звʼязок присутній лише в ER-схемі БД як `DB_Boards -.FK, nullable.-> DB_Competencies`, US-021).
+  - **Схема БД НЕ змінена** — фіча свідомо без міграції (US-037 AC9 / "API-поверхня"): реюз `boards`/`tasks`/`attachments`/`board_languages`/`competencies`/`languages` як є, без нових колонок чи таблиць. Жоден вузол ER-схеми не додано й не перейменовано.
+  - **Серверні інваріанти** (US-037 AC4): `visibility='private'` борду, `status='planned'` усіх тасок, `owner_id`/`created_by`=викликач, `position=(індекс+1)*1000`, `accent` за замовчуванням — будь-яке таке поле у файлі ігнорується. Невідомий/неактивний slug категорії чи мови, некоректний `planned_minutes`, порожнє/задовге тіло вкладення — НЕ критичні помилки: збираються в `warnings[]` (`{code, params}` — локалізований ключ + параметри, рендериться словником FE, той самий принцип, що `messageKey` помилок) поруч із 201. Перевищення 20000 символів тіла note-вкладення → тихе обрізання + warning (рішення користувача 2026-08-27, ключ `errors.boardImport.attachmentBodyTooLong` вилучено). Ліміт 200 тасок за імпорт — критична помилка.
+  - `backend/src/lib/apiError.js` (`sendError`) і `backend/src/lib/serviceErrors.js` (`ValidationError`) розширені опційним `params` для параметризованих locale-ключів (`{index}`/`{max}`/`{slug}`) — деталь всередині наявного error-контуру, окремого вузла не заведено. `frontend/src/api/client.js` — новий `importBoard()`. Нові locale-ключі `errors.boardImport.*`, `board.import.*`, `board.import.warning.*` (EN/UK повні).
+  - Tester/code review: **Approve with comments**, усі зауваження враховані до фіналізації, нових "відомих прогалин" не залоговано. Новий тест-файл `backend/test/concurrency/boardImport.test.js`.
+  - **CLAUDE.md текстом ще НЕ оновлено цим проходом** — той самий прецедент, що US-021…024 / US-025…029 / US-030…033 / US-034…036: підготовлені формулювання для розділів "API" (додати `POST /boards/import`), "Екрани" п.2 (дія "Імпортувати з файлу" в секції "Мої дошки"), "Поведінка" (імпорт = борд + усі таски + усі note-вкладення в одній транзакції) — у записі US-037…US-038 в `USER_STORIES.md`; застосування — окремий крок.
