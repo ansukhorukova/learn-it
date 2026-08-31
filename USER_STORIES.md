@@ -54,6 +54,7 @@
 | US-038 | Імпорт дошки з файлу: точка входу і клієнтський флоу | ✅ Готово (пройшло code review) | 2026-08-27 | FE_BoardImport, FE_Boards, BE_BoardImport |
 | US-039 | Персональний статус таски для глядача публічного борду + коментарі від глядача | ✅ Готово (пройшло code review) | 2026-08-27 | BE_Tasks, BE_TaskComments, DB_TaskPersonalStatus, DB_Tasks, DB_TaskComments |
 | US-040 | Інтерактивний публічний борд: персональний статус і форма коментаря для глядача | ✅ Готово (пройшло code review) | 2026-08-27 | FE_BoardView, FE_TaskPanel, BE_Tasks, BE_TaskComments |
+| US-041 | Імпорт: повний текст розділу → опис таски (не note-вкладення) | 🚧 В роботі | 2026-08-31 | BE_BoardImport, BE_Tasks, FE_BoardImport, FE_TaskPanel, DB_Tasks |
 <!-- business-analyst додає рядки сюди після кожної нової story -->
 
 ---
@@ -1726,4 +1727,37 @@ Warnings (не помилки — теж потрібні в обох словн
 
 ## Відповідність scope
 В межах — робить уже наявний екран Board view інтерактивним для нової ролі `public` (запровадженої US-022), без нового екрана й без нової моделі даних на FE. Не суперечить розділу "Поза межами цього етапу". Текстові зміни до CLAUDE.md ("Екрани" п.3 і п.4) — у розділі "походження" US-039…US-040 вище.
+```
+
+**US-041 — походження.** Фідбек користувача: під час імпорту дошки з файлу (US-037/US-038) повний текст розділу книжки потрапляв у **note-вкладення** таски. Користувач: концептуально це **опис таски**, а не вкладення; note-чіп ще й засмічує список вкладень поруч із реальними посиланнями/файлами; і тихе обрізання на 20000 символів небажане. Рішення користувача (не переуточнювалось): повний текст розділу має ставати **Описом таски** (`tasks.notes`, поле "Опис" у task panel), а не вкладенням; імпорт більше не створює вкладень узагалі.
+
+### US-041 — Імпорт: повний текст розділу як опис таски
+
+```
+## User Story
+Як власник борду, який імпортує дошку з файлу, я хочу, щоб повний текст розділу з книжки ставав описом таски (а не окремим вкладенням-нотаткою), щоб він був одразу видимий при відкритті таски й не змішувався зі списком реальних вкладень.
+
+## Acceptance Criteria
+1. Given `POST /api/v1/boards/import` з валідним файлом, When обробка тасок, Then текст для `tasks.notes` береться з `tasks[i].notes`; імпорт НЕ створює жодного рядка `attachments`. Відповідь 201 більше не містить поля `createdAttachmentCount` (`{ board, createdTaskCount, warnings }`).
+2. Given `tasks[i].notes` відсутній/порожній після trim, АЛЕ присутній legacy `tasks[i].attachment.body` (файл, згенерований старішою версією Skill), Then як джерело опису використовується `attachment.body` (back-compat на один реліз). Given заповнені обидва — `notes` перемагає, `attachment` ігнорується без warning. Given `attachment` не об'єкт (рядок/число) — ігнорується, без опису й без warning.
+3. Given фінальний текст опису після trim > 20000 символів, Then він обрізається (`slice`) до 20000, таска все одно створюється, і додається НЕ-критичний warning `board.import.warning.taskNotesTruncated` (`{taskTitle, max: 20000}`). Перевищення довжини опису при імпорті — більше НЕ критична помилка (ключ `errors.boardImport.taskNotesTooLong` вилучено).
+4. Given порожній/відсутній опис (і немає legacy `attachment.body`), Then `tasks.notes = NULL`, без warning.
+5. Given ліміт довжини опису таски (`tasks.notes`), Then він піднятий з 2000 до **20000 символів** — спільне число для ручного редагування ("Опис" у task panel) і для імпорту (`tasks.service.js` `NOTES_MAX_LENGTH`, `boardImport.service.js` `TASK_NOTES_MAX_LENGTH`, FE `TASK_DESCRIPTION_MAX_LENGTH`, `openapi.yaml`). Ручне редагування понад ліміт — як і раніше, `errors.task.notesTooLong` (текст оновлено на 20000). Міграції БД немає — `tasks.notes` уже `text`.
+6. Given таска з довгим описом у task panel, Then опис згортається до прев'ю (`DESCRIPTION_PREVIEW_LENGTH`) з кнопкою "Показати більше"/"Показати менше" (`task.notes.showMore`/`showLess`), тим самим патерном, що note-чіп (US-018); при перемиканні на іншу таску опис знову згорнутий.
+7. Given `openapi.yaml`, Then `BoardImportRequest` без `attachment` в елементах таски (лишається `deprecated` для back-compat), `notes` `maxLength: 20000`; `BoardImportResult` без `createdAttachmentCount`; enum `BoardImportWarning.code` — з `taskNotesTruncated` замість `attachmentSkipped`/`attachmentBodyTruncated`; опис шляху `/boards/import` без згадок вкладень.
+8. Given уже імпортовані раніше дошки, Then їхні наявні note-вкладення НЕ мігруються назад в опис — лишаються як є (немає data-міграції).
+9. Given нові/змінені UI-рядки, Then присутні в `locales/en.json` і `locales/uk.json` (двомовність — DoD).
+
+## API-поверхня
+- Змінює поведінку наявного `POST /api/v1/boards/import` (US-037) — нових ендпоінтів немає. `tasks.notes` тепер несе повний текст розділу; `attachments` при імпорті не пишуться.
+- Реюз `tasks` як є (колонка `notes` — `text`, ліміт лише на рівні застосунку); ручні note-**вкладення** (`attachments.service.js`, `NOTE_BODY_MAX_LENGTH=2000`) не чіпаються — окрема фіча.
+
+## Локалізація
+- Новий: `board.import.warning.taskNotesTruncated` (`{taskTitle, max}`) — en: "The description for \"{taskTitle}\" was longer than {max} characters and was trimmed.", uk: "Опис для «{taskTitle}» скорочено до {max} символів."
+- Новий: `task.notes.showMore` — en: "Show more", uk: "Показати більше"; `task.notes.showLess` — en: "Show less", uk: "Показати менше".
+- Змінено (2000 → 20000): `task.create.validation.descriptionTooLong`, `task.notes.validation.descriptionTooLong`, `errors.task.notesTooLong`.
+- Вилучено: `errors.boardImport.taskNotesTooLong`, `board.import.warning.attachmentSkipped`, `board.import.warning.attachmentBodyTruncated`.
+
+## Відповідність scope
+В межах — уточнює вже наявну фічу імпорту (US-037/US-038) поверх наявних примітивів `boards`/`tasks`; спрощує (прибирає створення вкладень при імпорті). Не додає моделі даних, авторизаційного правила чи зовнішньої інтеграції. Текстові зміни до CLAUDE.md (розділ "Екрани" п.2 і "Поведінка" — прибрати згадку "note-вкладень" при імпорті) — застосовуються цим проходом.
 ```

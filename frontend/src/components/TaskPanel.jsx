@@ -33,8 +33,13 @@ import styles from './TaskPanel.module.css';
 
 const LINK_TITLE_MAX_LENGTH = 200;
 const NOTE_BODY_MAX_LENGTH = 2000;
-const TASK_DESCRIPTION_MAX_LENGTH = 2000;
+// Matches tasks.service.js's NOTES_MAX_LENGTH. 20000 because board import
+// (US-041) writes the full text of a book section into this field.
+const TASK_DESCRIPTION_MAX_LENGTH = 20000;
 const NOTE_PREVIEW_LENGTH = 80;
+// A long imported description is collapsed to this many characters with a
+// "Show more" toggle (same idea as the note-attachment chip's preview).
+const DESCRIPTION_PREVIEW_LENGTH = 400;
 // Matches tasks.service.js's TITLE_MAX_LENGTH (backend/src/services/tasks.service.js)
 // and BoardViewPage.jsx's own copy of the same constant for task creation.
 const TITLE_MAX_LENGTH = 200;
@@ -310,6 +315,9 @@ function TaskPanel({
   const [notesValue, setNotesValue] = useState(task.notes || '');
   const [notesErrorKey, setNotesErrorKey] = useState(null);
   const [savingNotes, setSavingNotes] = useState(false);
+  // US-041: an imported description can be the full text of a book section —
+  // collapse it past DESCRIPTION_PREVIEW_LENGTH with a "Show more" toggle.
+  const [notesExpanded, setNotesExpanded] = useState(false);
 
   const [addingLink, setAddingLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
@@ -379,6 +387,11 @@ function TaskPanel({
   useEffect(() => {
     if (attachments !== null) onAttachmentCountChange?.(task.id, attachments.length);
   }, [attachments, task.id, onAttachmentCountChange]);
+
+  // Collapse a long description again when switching to another task.
+  useEffect(() => {
+    setNotesExpanded(false);
+  }, [task.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1015,7 +1028,23 @@ function TaskPanel({
           ) : (
             <>
               {task.notes ? (
-                <p className={styles.notesText}>{task.notes}</p>
+                <>
+                  <p className={styles.notesText}>
+                    {notesExpanded || task.notes.length <= DESCRIPTION_PREVIEW_LENGTH
+                      ? task.notes
+                      : truncate(task.notes, DESCRIPTION_PREVIEW_LENGTH)}
+                  </p>
+                  {task.notes.length > DESCRIPTION_PREVIEW_LENGTH && (
+                    <button
+                      type="button"
+                      className={styles.noteToggle}
+                      aria-expanded={notesExpanded}
+                      onClick={() => setNotesExpanded((v) => !v)}
+                    >
+                      {t(notesExpanded ? 'task.notes.showLess' : 'task.notes.showMore')}
+                    </button>
+                  )}
+                </>
               ) : (
                 <p className={styles.hint}>{t('task.notes.empty')}</p>
               )}

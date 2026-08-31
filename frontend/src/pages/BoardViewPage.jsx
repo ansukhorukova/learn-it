@@ -29,7 +29,10 @@ import TaskPanel from '../components/TaskPanel';
 import styles from './BoardViewPage.module.css';
 
 const TITLE_MAX_LENGTH = 200;
-const DESCRIPTION_MAX_LENGTH = 2000;
+// Matches tasks.service.js's NOTES_MAX_LENGTH / TaskPanel's
+// TASK_DESCRIPTION_MAX_LENGTH (US-041 raised this to 20000 so an imported
+// book-section description fits the same field manual edits use).
+const DESCRIPTION_MAX_LENGTH = 20000;
 
 // Exact wording per CLAUDE.md / product-owner confirmation — do not rename.
 const COLUMNS = [
