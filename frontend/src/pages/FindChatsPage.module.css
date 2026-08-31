@@ -104,7 +104,7 @@
 }
 
 .joinButton {
-  background: var(--color-accent-amber);
+  background: var(--color-primary);
   color: var(--color-bg);
   border: none;
 }

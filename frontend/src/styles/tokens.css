@@ -1,32 +1,50 @@
 /*
- * Design tokens — CLAUDE.md "Стилізація": warm dark surfaces, one amber
- * accent reserved for active-timer state elsewhere in the app, Sora/Manrope
- * font pairing. No component should hardcode a color literal — reference
- * these custom properties instead.
+ * Design tokens — Anastasiya Brand System v1.0
+ * ("Dark technical foundation. Pink energy. Human warmth.")
+ *
+ * Canonical values live in anastasiya-brand-package/brand/design-tokens.json.
+ * No component hardcodes a color literal — every surface references one of
+ * these custom properties, so the whole UI re-skins from this one file.
+ *
+ * Accent policy:
+ *  - brand pink (--color-primary) = the single most important action in a
+ *    region, selected state, brand emphasis. An accent, never a background.
+ *  - amber (--color-accent-amber) = the running timer + warning/reconnecting
+ *    states only (brand: warning = amber). Nowhere else.
+ *  - semantic green/blue/red keep their functional meaning, never recolored.
  */
 :root {
-  /* Warm dark surfaces */
-  --color-bg: #1a1510;
-  --color-surface: #241d15;
-  --color-surface-raised: #2e2519;
-  --color-border: #3d3122;
-  --color-border-strong: #56452e;
+  /* Dark technical foundation — near-black base, brand slate surfaces */
+  --color-bg: #080910;              /* background.primary — app background */
+  --color-surface: #171824;         /* surface.default — cards, header */
+  --color-surface-raised: #1f1f2e;  /* surface.elevated — modals, inputs, popovers */
+  --color-border: rgba(255, 255, 255, 0.1);   /* border.default */
+  --color-border-strong: rgba(255, 255, 255, 0.18); /* border.strong */
 
-  /* Text */
-  --color-text: #f3ead9;
-  --color-text-muted: #b9a98d;
-  --color-text-faint: #8b7c63;
+  /* Text — off-white for warmth against the dark base */
+  --color-text: #f7f7fa;
+  --color-text-muted: #b5b5c3;
+  --color-text-faint: #7e8091;
 
-  /* Accent — reserved for active-timer UI (not used on the auth screen) */
-  --color-accent-amber: #e0982c;
-  --color-accent-amber-strong: #f3ad3f;
+  /* Brand pink — energy. Primary actions, selected items, key emphasis.
+     Pink is an accent, not the product background (brand rule). */
+  --color-primary: #ff3b91;          /* brand.pink */
+  --color-primary-hover: #ff66ab;    /* subtle brighter hover — no glow */
+  --color-primary-contrast: #10111b; /* dark text on pink fills (WCAG AA) */
+  --color-primary-soft: rgba(255, 59, 145, 0.14); /* restrained pink tint */
+  --color-accent-magenta: #e62e8b;   /* brand.magenta — secondary accent */
+  --color-accent-purple: #8b5cf6;    /* brand.purple — supportive / charts only */
 
-  /* Board accent swatches — a small fixed palette for visually
-     distinguishing board cards (boards.accent). Deliberately a separate
-     namespace from --color-accent-amber above: that one is reserved
-     exclusively for active-timer UI per CLAUDE.md "Стилізація", and reusing
-     it here would blur that meaning once per-board timers exist. Components
-     never hardcode a hex value — they map a board's `accent` key (see
+  /* Amber — reserved for the running-timer state and warning/reconnecting
+     banners (brand: warning = amber). Not a general accent. */
+  --color-accent-amber: #f59e0b;
+  --color-accent-amber-strong: #fbbf24;
+
+  /* Board accent swatches — a small fixed palette for visually distinguishing
+     board cards (boards.accent). A separate namespace from the brand accents
+     above on purpose: --color-primary is reserved for meaningful emphasis and
+     --color-accent-amber for the timer, and reusing either here would blur
+     that meaning. Components map a board's `accent` key (see
      backend/src/services/boards.service.js ACCENTS /
      frontend/src/constants/boardAccents.js) to one of these tokens. */
   --board-accent-teal: #4a9c8f;
@@ -36,27 +54,32 @@
   --board-accent-moss: #86a35a;
   --board-accent-clay: #cf9152;
 
-  /* Status */
-  --color-danger: #e2564f;
-  --color-danger-bg: #3a201d;
-  --color-danger-border: #5c2e28;
+  /* Semantic — functional, never recolored pink */
+  --color-success: #22c55e;
+  --color-info: #3b82f6;
+  --color-danger: #ef4444;
+  --color-danger-bg: #2a1417;
+  --color-danger-border: #5b2a2e;
 
-  --color-focus-ring: #d8c9a8;
+  /* Focus — pink ring (brand: "pink focus ring") */
+  --color-focus-ring: #ff3b91;
+  --focus-ring-shadow: 0 0 0 3px rgba(255, 59, 145, 0.24);
 
-  /* Modal/dialog scrim — warm-tinted black to match the dark surface
-     palette above rather than a neutral black overlay. */
-  --color-overlay: rgba(10, 7, 3, 0.6);
+  /* Modal/dialog scrim — near-black, matches the dark foundation */
+  --color-overlay: rgba(4, 4, 10, 0.66);
 
-  /* Typography */
-  --font-heading: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Typography — modern sans, no custom font required for usability */
+  --font-heading: Inter, Geist, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body: Inter, Geist, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  /* Radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 18px;
+  /* Radii — brand scale (8 / 12 / 16 / 24) */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
 
-  /* Spacing scale */
+  /* Spacing scale (8px system) */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -65,5 +88,13 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  --shadow-card: 0 24px 60px rgba(0, 0, 0, 0.4);
+  /* Shadows — restrained; glow is a reward for importance, not a default */
+  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.2);
+  --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-glow-soft: 0 0 24px rgba(255, 59, 145, 0.18);
+
+  /* Motion — micro-interactions only */
+  --motion-fast: 140ms;
+  --motion-normal: 200ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }

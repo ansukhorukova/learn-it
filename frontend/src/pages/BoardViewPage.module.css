@@ -44,7 +44,7 @@
 }
 
 .createButton {
-  background: var(--color-text);
+  background: var(--color-primary);
   color: var(--color-bg);
   border: none;
   border-radius: var(--radius-sm);
@@ -156,7 +156,7 @@
   display: inline-block;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px var(--space-3);
   font-size: 0.75rem;
   color: var(--color-text-muted);
@@ -205,7 +205,7 @@
 }
 
 .submit {
-  background: var(--color-text);
+  background: var(--color-primary);
   color: var(--color-bg);
   border: none;
   border-radius: var(--radius-sm);

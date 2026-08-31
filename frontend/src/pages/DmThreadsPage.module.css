@@ -32,7 +32,7 @@
 }
 
 .findChatsCta {
-  color: var(--color-accent-amber);
+  color: var(--color-primary);
   font-weight: 700;
   font-size: 0.8125rem;
   text-decoration: none;
