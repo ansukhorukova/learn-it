@@ -19,7 +19,7 @@ export const API_URL =
  * seed a brand-new row and is ignored for a returning user.
  */
 export async function fetchCurrentUser(idToken, locale) {
-  const res = await fetch(`${API_URL}/users/me?locale=${encodeURIComponent(locale)}`, {
+  const res = await fetchOrNetworkError(`${API_URL}/users/me?locale=${encodeURIComponent(locale)}`, {
     headers: { Authorization: `Bearer ${idToken}` },
   });
   if (!res.ok) {
@@ -36,7 +36,7 @@ export async function fetchCurrentUser(idToken, locale) {
  * is `'password' | 'google.com' | null`. Never call this from the sign-in path.
  */
 export async function fetchProviderHint(email) {
-  const res = await fetch(`${API_URL}/auth/provider-hint?email=${encodeURIComponent(email)}`);
+  const res = await fetchOrNetworkError(`${API_URL}/auth/provider-hint?email=${encodeURIComponent(email)}`);
   if (!res.ok) {
     throw new Error(`GET /auth/provider-hint failed with status ${res.status}`);
   }
@@ -62,6 +62,24 @@ export class ApiRequestError extends Error {
   }
 }
 
+// `fetch()` rejects with a TypeError when the request never reaches a server
+// (backend down, DNS failure, connection refused, offline). Callers all render
+// `err.messageKey || 'errors.generic'`, so without this a stopped backend shows
+// the generic "Something went wrong" — indistinguishable from a real 5xx.
+// Wrapping every fetch here turns that into a distinct `errors.network`
+// ("Can't reach the server") so the cause is obvious. A non-TypeError (or an
+// already-mapped ApiRequestError) is rethrown untouched.
+async function fetchOrNetworkError(input, init) {
+  try {
+    return await fetch(input, init);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new ApiRequestError(0, 'NETWORK_ERROR', 'errors.network', err.message);
+    }
+    throw err;
+  }
+}
+
 // Shared fetch wrapper for the boards/tasks/attachments endpoints below —
 // every call carries the caller's Firebase ID token (obtained by the
 // component via `user.getIdToken()`, same pattern as fetchCurrentUser above)
@@ -70,7 +88,7 @@ export class ApiRequestError extends Error {
 // Content-Type/stringify path — the browser sets the correct multipart
 // boundary header itself when the body is a FormData instance.
 async function request(path, { method = 'GET', idToken, body, formData } = {}) {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetchOrNetworkError(`${API_URL}${path}`, {
     method,
     headers: {
       ...(formData ? {} : { 'Content-Type': 'application/json' }),
@@ -131,7 +149,7 @@ export function createBoard(idToken, payload) {
 // verbatim as the request body. The FE does only a light structural check
 // (non-empty board.title, non-empty tasks array) before calling this — all
 // other validation (slugs, field lengths, the 200-task cap) is the BE's.
-// 201 → { board, createdTaskCount, createdAttachmentCount, warnings: [{ code, params }] };
+// 201 → { board, createdTaskCount, warnings: [{ code, params }] };
 // a 4xx surfaces via ApiRequestError with a localized `messageKey` (+ `params`
 // on `errors.boardImport.*` keys that take {index}/{max}).
 export function importBoard(idToken, parsedFile) {

@@ -4,24 +4,30 @@ const { toBoardSummary } = require('./boards.service');
 
 /**
  * `POST /api/v1/boards/import` (US-037) — bulk-creates a board + all its
- * tasks (+ each task's optional note attachment) from a single parsed JSON
- * payload, in ONE transaction. Partial imports never happen: any critical
- * validation failure (see the `ValidationError`s below) throws BEFORE the
- * transaction is opened — the exact same "validate everything up front, so
- * the write is all-or-nothing by construction" ordering `boards.service.js`'s
- * `createBoard` already uses for `resolveCategoryId`/`resolveLanguages`.
+ * tasks from a single parsed JSON payload, in ONE transaction. Partial
+ * imports never happen: any critical validation failure (see the
+ * `ValidationError`s below) throws BEFORE the transaction is opened — the
+ * exact same "validate everything up front, so the write is all-or-nothing
+ * by construction" ordering `boards.service.js`'s `createBoard` already uses
+ * for `resolveCategoryId`/`resolveLanguages`.
+ *
+ * US-041: the full text of a book section is the task's Description
+ * (`tasks.notes`) — it used to be stored as a separate `kind: 'note'`
+ * attachment. The import no longer creates attachments at all. A file's
+ * per-task `notes` carries that text; for back-compat with files an older
+ * Skill generated, a legacy `attachment.body` is used as the notes source
+ * when `notes` itself is absent.
  *
  * Server-authoritative fields (US-037 AC4): the new board is always
  * `visibility: 'private'`, every task is `status: 'planned'` with
- * `position = (index + 1) * 1000`, every attachment is `kind: 'note'` /
- * `visibility: 'private'`, and `owner_id`/`created_by` is always the caller —
- * any such field present in the file is ignored.
+ * `position = (index + 1) * 1000`, and `owner_id`/`created_by` is always the
+ * caller — any such field present in the file is ignored.
  *
  * Non-critical issues (unknown/inactive category or language slug, an
- * invalid `planned_minutes`, an empty or over-long attachment body) never
- * block the import — they are collected as `warnings` (`{code, params}`,
- * a locale key + its params, rendered by the FE's own dictionary, same
- * principle as error `messageKey`s) and returned alongside the 201.
+ * invalid `planned_minutes`, an over-long description) never block the
+ * import — they are collected as `warnings` (`{code, params}`, a locale key
+ * + its params, rendered by the FE's own dictionary, same principle as error
+ * `messageKey`s) and returned alongside the 201.
  */
 
 // Reuses boards.service.js's own board title/description limits (kept in
@@ -31,15 +37,11 @@ const BOARD_DESCRIPTION_MAX_LENGTH = 2000;
 // US-037 AC8: task title reuses tasks.service.js's TITLE_MAX_LENGTH, notes
 // its NOTES_MAX_LENGTH.
 const TASK_TITLE_MAX_LENGTH = 200;
-const TASK_NOTES_MAX_LENGTH = 2000;
-// US-037 AC14: an over-long attachment title is silently sliced, no warning.
-const ATTACHMENT_TITLE_MAX_LENGTH = 200;
-// US-037 AC9 (as amended 2026-08-27): a deliberately higher ceiling than
-// attachments.service.js's manual NOTE_BODY_MAX_LENGTH (2000) — an imported
-// note attachment is "the full text of a book chapter". Over this, the body
-// is trimmed (not rejected) and a non-critical
-// `board.import.warning.attachmentBodyTruncated` warning is added.
-const IMPORT_ATTACHMENT_BODY_MAX_LENGTH = 20000;
+// US-041: mirrors tasks.service.js's NOTES_MAX_LENGTH — the imported
+// description is "the full text of a book section". Over this, the text is
+// trimmed (not rejected) and a non-critical
+// `board.import.warning.taskNotesTruncated` warning is added.
+const TASK_NOTES_MAX_LENGTH = 20000;
 // US-037 AC7: at most 200 tasks per import — a chunked/paged import is out
 // of scope for this pass.
 const MAX_TASKS = 200;
@@ -123,33 +125,31 @@ function resolvePlannedMinutes(rawValue, taskTitle, warnings) {
   return rawValue;
 }
 
-// US-037 AC10/AC14/AC9: `kind` is always treated as `note`. An empty body →
-// no attachment + `attachmentSkipped` warning. An over-long body → trimmed
-// to IMPORT_ATTACHMENT_BODY_MAX_LENGTH + `attachmentBodyTruncated` warning.
-// An over-long title → sliced, no warning. A missing title → null.
-function resolveAttachment(rawAttachment, taskTitle, warnings) {
-  if (rawAttachment === undefined || rawAttachment === null || typeof rawAttachment !== 'object') return null;
-
-  const body = asTrimmedString(rawAttachment.body);
-  if (!body) {
-    warnings.push({ code: 'board.import.warning.attachmentSkipped', params: { taskTitle } });
-    return null;
+// US-041: the task Description (`tasks.notes`). Source text is `task.notes`;
+// if that's absent, a legacy `task.attachment.body` is used instead
+// (back-compat with files an older Skill generated — the import no longer
+// creates attachments). Empty → null, no warning. Over TASK_NOTES_MAX_LENGTH
+// → trimmed (not rejected) + a non-critical `taskNotesTruncated` warning.
+function resolveNotes(rawTask, taskTitle, warnings) {
+  let source = rawTask.notes;
+  if (source === undefined || source === null || String(source).trim() === '') {
+    const legacyAttachment = rawTask.attachment;
+    if (legacyAttachment && typeof legacyAttachment === 'object' && !Array.isArray(legacyAttachment)) {
+      source = legacyAttachment.body;
+    }
   }
+  if (source === undefined || source === null) return null;
 
-  let finalBody = body;
-  if (finalBody.length > IMPORT_ATTACHMENT_BODY_MAX_LENGTH) {
-    finalBody = finalBody.slice(0, IMPORT_ATTACHMENT_BODY_MAX_LENGTH);
+  const trimmed = String(source).trim();
+  if (!trimmed) return null;
+  if (trimmed.length > TASK_NOTES_MAX_LENGTH) {
     warnings.push({
-      code: 'board.import.warning.attachmentBodyTruncated',
-      params: { taskTitle, max: IMPORT_ATTACHMENT_BODY_MAX_LENGTH },
+      code: 'board.import.warning.taskNotesTruncated',
+      params: { taskTitle, max: TASK_NOTES_MAX_LENGTH },
     });
+    return trimmed.slice(0, TASK_NOTES_MAX_LENGTH);
   }
-
-  let title = asTrimmedString(rawAttachment.title);
-  if (!title) title = null;
-  else if (title.length > ATTACHMENT_TITLE_MAX_LENGTH) title = title.slice(0, ATTACHMENT_TITLE_MAX_LENGTH);
-
-  return { title, body: finalBody };
+  return trimmed;
 }
 
 function validateTasks(rawTasks, warnings) {
@@ -172,20 +172,10 @@ function validateTasks(rawTasks, warnings) {
       throw new ValidationError('errors.boardImport.taskTitleTooLong', { index });
     }
 
-    let notes = null;
-    if (task.notes !== undefined && task.notes !== null) {
-      const trimmedNotes = String(task.notes).trim();
-      if (trimmedNotes.length > TASK_NOTES_MAX_LENGTH) {
-        throw new ValidationError('errors.boardImport.taskNotesTooLong', { index });
-      }
-      notes = trimmedNotes || null;
-    }
-
     return {
       title,
-      notes,
+      notes: resolveNotes(task, title, warnings),
       plannedMinutes: resolvePlannedMinutes(task.planned_minutes, title, warnings),
-      attachment: resolveAttachment(task.attachment, title, warnings),
       position: index * 1000,
     };
   });
@@ -234,44 +224,25 @@ async function importBoard(ownerId, payload) {
     }
 
     let createdTaskCount = 0;
-    let createdAttachmentCount = 0;
 
     for (const preparedTask of preparedTasks) {
       // eslint-disable-next-line no-await-in-loop -- one INSERT per task,
       // all on the same transaction/connection; sequential keeps the
       // (board_id, status, position) ordering deterministic and the code
       // trivially readable. At most MAX_TASKS (200) iterations.
-      const [taskRow] = await trx('tasks')
-        .insert({
-          board_id: boardRow.id,
-          title: preparedTask.title,
-          notes: preparedTask.notes,
-          status: 'planned',
-          position: preparedTask.position,
-          created_by: ownerId,
-          planned_minutes: preparedTask.plannedMinutes,
-        })
-        .returning('id');
+      await trx('tasks').insert({
+        board_id: boardRow.id,
+        title: preparedTask.title,
+        notes: preparedTask.notes,
+        status: 'planned',
+        position: preparedTask.position,
+        created_by: ownerId,
+        planned_minutes: preparedTask.plannedMinutes,
+      });
       createdTaskCount += 1;
-
-      if (preparedTask.attachment) {
-        // eslint-disable-next-line no-await-in-loop -- see above.
-        await trx('attachments').insert({
-          task_id: taskRow.id,
-          created_by: ownerId,
-          kind: 'note',
-          title: preparedTask.attachment.title,
-          body: preparedTask.attachment.body,
-          // Same invariant as attachments.service.js's insertAttachment —
-          // every attachment this codebase creates is 'private' (no
-          // visibility picker exists yet).
-          visibility: 'private',
-        });
-        createdAttachmentCount += 1;
-      }
     }
 
-    return { boardRow, createdTaskCount, createdAttachmentCount };
+    return { boardRow, createdTaskCount };
   });
 
   return {
@@ -281,7 +252,6 @@ async function importBoard(ownerId, payload) {
       languages: languageRows.map((language) => ({ id: language.id, slug: language.slug })),
     }),
     createdTaskCount: created.createdTaskCount,
-    createdAttachmentCount: created.createdAttachmentCount,
     warnings,
   };
 }
@@ -289,7 +259,7 @@ async function importBoard(ownerId, payload) {
 module.exports = {
   BOARD_TITLE_MAX_LENGTH,
   TASK_TITLE_MAX_LENGTH,
-  IMPORT_ATTACHMENT_BODY_MAX_LENGTH,
+  TASK_NOTES_MAX_LENGTH,
   MAX_TASKS,
   importBoard,
 };

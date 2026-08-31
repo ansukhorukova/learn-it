@@ -1,5 +1,6 @@
-// Tester coverage for US-037 (POST /api/v1/boards/import — transactional
-// board import). Lives under test/concurrency/ for the same reason as
+// Tester coverage for US-037 / US-041 (POST /api/v1/boards/import —
+// transactional board import; section text is the task Description, not a
+// note attachment). Lives under test/concurrency/ for the same reason as
 // plannedMinutes.test.js / boardCategoryVisibilityLanguages.test.js:
 // vitest.config.js only includes that glob, and this suite needs the real
 // Postgres connection the concurrency harness already sets up
@@ -21,7 +22,7 @@ async function countBoards(ownerId) {
   return Number(count);
 }
 
-describe('US-037 board import', () => {
+describe('US-037 / US-041 board import', () => {
   let ownerId;
 
   beforeEach(async () => {
@@ -32,18 +33,19 @@ describe('US-037 board import', () => {
     await cleanupUser(ownerId);
   });
 
-  it('AC1/AC2: creates board + tasks + note attachments in one call, returns the documented shape', async () => {
+  it('AC1/AC2: creates board + tasks in one call, section text is the task Description', async () => {
     const result = await boardImportService.importBoard(ownerId, {
       board: { title: 'Algorithms', description: '  From a book  ' },
       tasks: [
-        { title: 'Chapter 1', planned_minutes: 90, notes: 'intro', attachment: { kind: 'note', body: 'full text 1' } },
+        { title: 'Chapter 1', planned_minutes: 90, notes: 'full text 1' },
+        // US-041 back-compat: a legacy attachment.body with no `notes` folds into notes
         { title: 'Chapter 2', attachment: { body: 'full text 2' } },
         { title: 'Chapter 3' },
       ],
     });
 
     expect(result.createdTaskCount).toBe(3);
-    expect(result.createdAttachmentCount).toBe(2);
+    expect(result).not.toHaveProperty('createdAttachmentCount');
     expect(result.warnings).toEqual([]);
     // board is toBoardSummary's shape (same as POST /boards)
     expect(result.board).toMatchObject({
@@ -65,21 +67,28 @@ describe('US-037 board import', () => {
     const taskRows = await db('tasks').where({ board_id: result.board.id }).orderBy('position', 'asc');
     expect(taskRows.map((t) => t.title)).toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3']);
     expect(taskRows.map((t) => t.position)).toEqual([1000, 2000, 3000]);
+    expect(taskRows.map((t) => t.notes)).toEqual(['full text 1', 'full text 2', null]);
     expect(taskRows.every((t) => t.status === 'planned')).toBe(true);
     expect(taskRows.every((t) => t.created_by === ownerId)).toBe(true);
     expect(taskRows[0].planned_minutes).toBe(90);
     expect(taskRows[1].planned_minutes).toBeNull();
 
-    const attachmentRows = await db('attachments')
-      .whereIn(
-        'task_id',
-        taskRows.map((t) => t.id),
-      )
-      .orderBy('created_at', 'asc');
-    expect(attachmentRows).toHaveLength(2);
-    expect(attachmentRows.every((a) => a.kind === 'note')).toBe(true);
-    expect(attachmentRows.every((a) => a.visibility === 'private')).toBe(true);
-    expect(attachmentRows.every((a) => a.created_by === ownerId)).toBe(true);
+    // US-041: the import creates no attachments
+    const attachmentRows = await db('attachments').whereIn(
+      'task_id',
+      taskRows.map((t) => t.id),
+    );
+    expect(attachmentRows).toHaveLength(0);
+  });
+
+  it('US-041: an explicit `notes` wins over a legacy `attachment.body`', async () => {
+    const result = await boardImportService.importBoard(ownerId, {
+      board: { title: 'B' },
+      tasks: [{ title: 'T', notes: 'the description', attachment: { body: 'stale text' } }],
+    });
+    const taskRow = await db('tasks').where({ board_id: result.board.id }).first();
+    expect(taskRow.notes).toBe('the description');
+    expect(result.warnings).toEqual([]);
   });
 
   it('AC4: visibility / status / owner_id / created_by in the file are ignored', async () => {
@@ -142,7 +151,7 @@ describe('US-037 board import', () => {
     expect(result.createdTaskCount).toBe(200);
   });
 
-  it('AC8: per-task title/notes validation carries the 1-based {index}', async () => {
+  it('AC8: per-task title validation carries the 1-based {index}', async () => {
     const missingTitle = await boardImportService
       .importBoard(ownerId, { board: { title: 'B' }, tasks: [{ title: 'ok' }, { title: '  ' }] })
       .catch((e) => e);
@@ -155,21 +164,29 @@ describe('US-037 board import', () => {
     expect(longTitle.messageKey).toBe('errors.boardImport.taskTitleTooLong');
     expect(longTitle.params).toEqual({ index: 1 });
 
-    const longNotes = await boardImportService
-      .importBoard(ownerId, { board: { title: 'B' }, tasks: [{ title: 'ok' }, { title: 'ok2', notes: 'n'.repeat(2001) }] })
-      .catch((e) => e);
-    expect(longNotes.messageKey).toBe('errors.boardImport.taskNotesTooLong');
-    expect(longNotes.params).toEqual({ index: 2 });
-
     expect(await countBoards(ownerId)).toBe(0);
   });
 
-  it('AC3: a critical failure rolls back completely — no board, tasks, or attachments', async () => {
+  it('US-041: an over-long `notes` is no longer a critical error — it is trimmed + warned', async () => {
+    const result = await boardImportService.importBoard(ownerId, {
+      board: { title: 'B' },
+      tasks: [{ title: 'ok' }, { title: 'ok2', notes: 'n'.repeat(20001) }],
+    });
+    expect(result.createdTaskCount).toBe(2);
+    expect(result.warnings).toContainEqual({
+      code: 'board.import.warning.taskNotesTruncated',
+      params: { taskTitle: 'ok2', max: 20000 },
+    });
+    const taskRows = await db('tasks').where({ board_id: result.board.id }).orderBy('position', 'asc');
+    expect(taskRows[1].notes).toHaveLength(20000);
+  });
+
+  it('AC3: a critical failure rolls back completely — no board or tasks', async () => {
     await expect(
       boardImportService.importBoard(ownerId, {
         board: { title: 'Half board' },
         tasks: [
-          { title: 'good', attachment: { body: 'x' } },
+          { title: 'good', notes: 'x' },
           { title: 'x'.repeat(201) }, // trips taskTitleTooLong at index 2
         ],
       }),
@@ -180,21 +197,21 @@ describe('US-037 board import', () => {
     expect(anyTask).toBeUndefined();
   });
 
-  it('AC9: an attachment body over 20000 chars is trimmed, attachment still created, with a warning', async () => {
+  it('US-041: a legacy `attachment.body` over 20000 chars folds into notes, trimmed + warned', async () => {
     const result = await boardImportService.importBoard(ownerId, {
       board: { title: 'B' },
       tasks: [{ title: 'Long chapter', attachment: { body: 'a'.repeat(25000) } }],
     });
-    expect(result.createdAttachmentCount).toBe(1);
     expect(result.warnings).toContainEqual({
-      code: 'board.import.warning.attachmentBodyTruncated',
+      code: 'board.import.warning.taskNotesTruncated',
       params: { taskTitle: 'Long chapter', max: 20000 },
     });
-    const attachment = await db('attachments').where({ created_by: ownerId }).first();
-    expect(attachment.body).toHaveLength(20000);
+    const taskRow = await db('tasks').where({ board_id: result.board.id }).first();
+    expect(taskRow.notes).toHaveLength(20000);
+    expect(await db('attachments').where({ created_by: ownerId })).toHaveLength(0);
   });
 
-  it('AC10: empty attachment body → no attachment + attachmentSkipped warning; kind is ignored', async () => {
+  it('US-041: an empty legacy attachment body and no notes → no description, no warning', async () => {
     const result = await boardImportService.importBoard(ownerId, {
       board: { title: 'B' },
       tasks: [
@@ -202,11 +219,9 @@ describe('US-037 board import', () => {
         { title: 'No attachment key' },
       ],
     });
-    expect(result.createdAttachmentCount).toBe(0);
-    expect(result.warnings).toContainEqual({
-      code: 'board.import.warning.attachmentSkipped',
-      params: { taskTitle: 'Empty note' },
-    });
+    expect(result.warnings).toEqual([]);
+    const taskRows = await db('tasks').where({ board_id: result.board.id }).orderBy('position', 'asc');
+    expect(taskRows.map((t) => t.notes)).toEqual([null, null]);
     expect(await db('attachments').where({ created_by: ownerId })).toHaveLength(0);
   });
 
@@ -271,22 +286,12 @@ describe('US-037 board import', () => {
     expect(dropped.map((w) => w.params.taskTitle).sort()).toEqual(['Fractional', 'Negative', 'TooBig']);
   });
 
-  it('AC14: an over-long attachment title is sliced to 200, no warning', async () => {
-    const result = await boardImportService.importBoard(ownerId, {
-      board: { title: 'B' },
-      tasks: [{ title: 'T', attachment: { title: 't'.repeat(500), body: 'text' } }],
-    });
-    expect(result.warnings).toEqual([]);
-    const attachment = await db('attachments').where({ created_by: ownerId }).first();
-    expect(attachment.title).toHaveLength(200);
-  });
-
   it('AC17: warnings never block — the response is still a normal success with the board created', async () => {
     const result = await boardImportService.importBoard(
       ownerId,
       basePayload({
         board: { title: 'B', category: 'bad', languages: ['bad'] },
-        tasks: [{ title: 'T', planned_minutes: 'x', attachment: { body: '' } }],
+        tasks: [{ title: 'T', planned_minutes: 'x' }],
       }),
     );
     expect(result.createdTaskCount).toBe(1);
@@ -294,12 +299,12 @@ describe('US-037 board import', () => {
     expect(await countBoards(ownerId)).toBe(1);
   });
 
-  // --- Tester-added boundary coverage (US-037 AC6/AC8/AC9/AC10/AC13) ---
+  // --- Tester-added boundary coverage (US-037 AC6/AC8/AC13, US-041 notes) ---
 
-  it('AC6/AC8 boundaries: exactly-max board title (100), description (2000), task title (200), notes (2000) all pass', async () => {
+  it('boundaries: exactly-max board title (100), description (2000), task title (200), notes (20000) all pass', async () => {
     const result = await boardImportService.importBoard(ownerId, {
       board: { title: 'b'.repeat(100), description: 'd'.repeat(2000) },
-      tasks: [{ title: 't'.repeat(200), notes: 'n'.repeat(2000) }],
+      tasks: [{ title: 't'.repeat(200), notes: 'n'.repeat(20000) }],
     });
     expect(result.warnings).toEqual([]);
     const boardRow = await db('boards').where({ id: result.board.id }).first();
@@ -307,24 +312,24 @@ describe('US-037 board import', () => {
     expect(boardRow.description).toHaveLength(2000);
     const taskRow = await db('tasks').where({ board_id: result.board.id }).first();
     expect(taskRow.title).toHaveLength(200);
-    expect(taskRow.notes).toHaveLength(2000);
+    expect(taskRow.notes).toHaveLength(20000);
   });
 
-  it('AC9 boundary: attachment body of exactly 20000 chars is kept as-is with no warning; 20001 is trimmed + warned', async () => {
+  it('US-041 boundary: notes of exactly 20000 chars passes with no warning; 20001 is trimmed + warned', async () => {
     const exact = await boardImportService.importBoard(ownerId, {
       board: { title: 'B' },
-      tasks: [{ title: 'Exact', attachment: { body: 'a'.repeat(20000) } }],
+      tasks: [{ title: 'Exact', notes: 'a'.repeat(20000) }],
     });
     expect(exact.warnings).toEqual([]);
-    const exactRow = await db('attachments').where({ created_by: ownerId }).first();
-    expect(exactRow.body).toHaveLength(20000);
+    const exactRow = await db('tasks').where({ board_id: exact.board.id }).first();
+    expect(exactRow.notes).toHaveLength(20000);
 
     const over = await boardImportService.importBoard(ownerId, {
       board: { title: 'B2' },
-      tasks: [{ title: 'Over', attachment: { body: `${'a'.repeat(20001)}` } }],
+      tasks: [{ title: 'Over', notes: 'a'.repeat(20001) }],
     });
     expect(over.warnings).toContainEqual({
-      code: 'board.import.warning.attachmentBodyTruncated',
+      code: 'board.import.warning.taskNotesTruncated',
       params: { taskTitle: 'Over', max: 20000 },
     });
   });
@@ -339,7 +344,7 @@ describe('US-037 board import', () => {
     expect(taskRow.planned_minutes).toBe(9999);
   });
 
-  it('AC10: a non-object `attachment` (string / number) is ignored with no attachment and no warning', async () => {
+  it('US-041: a non-object legacy `attachment` (string / number) is ignored — no description, no warning', async () => {
     const result = await boardImportService.importBoard(ownerId, {
       board: { title: 'B' },
       tasks: [
@@ -347,8 +352,9 @@ describe('US-037 board import', () => {
         { title: 'Number attachment', attachment: 42 },
       ],
     });
-    expect(result.createdAttachmentCount).toBe(0);
     expect(result.warnings).toEqual([]);
+    const taskRows = await db('tasks').where({ board_id: result.board.id }).orderBy('position', 'asc');
+    expect(taskRows.map((t) => t.notes)).toEqual([null, null]);
     expect(await db('attachments').where({ created_by: ownerId })).toHaveLength(0);
   });
 });

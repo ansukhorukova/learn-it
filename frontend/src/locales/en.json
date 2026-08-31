@@ -149,8 +149,7 @@
         "unknownLanguage": "Language \"{slug}\" wasn't recognized and was skipped.",
         "inactiveLanguage": "Language \"{slug}\" is no longer available and was skipped.",
         "plannedMinutesDropped": "The time estimate for \"{taskTitle}\" was invalid and was left empty.",
-        "attachmentSkipped": "The note attachment for \"{taskTitle}\" was empty and was skipped.",
-        "attachmentBodyTruncated": "The note attachment for \"{taskTitle}\" was longer than {max} characters and was trimmed."
+        "taskNotesTruncated": "The description for \"{taskTitle}\" was longer than {max} characters and was trimmed."
       }
     },
     "card": {
@@ -213,7 +212,7 @@
       "validation": {
         "titleRequired": "Task title is required",
         "titleTooLong": "Task title must be 200 characters or fewer",
-        "descriptionTooLong": "Description must be 2000 characters or fewer"
+        "descriptionTooLong": "Description must be 20000 characters or fewer"
       }
     },
     "rename": {
@@ -230,8 +229,10 @@
       "placeholder": "Add a description…",
       "edit": "Edit description",
       "add": "Add description",
+      "showMore": "Show more",
+      "showLess": "Show less",
       "validation": {
-        "descriptionTooLong": "Description must be 2000 characters or fewer"
+        "descriptionTooLong": "Description must be 20000 characters or fewer"
       }
     },
     "delete": {
@@ -575,7 +576,6 @@
       "tooManyTasks": "A single import can include at most {max} tasks.",
       "taskTitleRequired": "Task #{index} in this file is missing a title.",
       "taskTitleTooLong": "Task #{index}: title must be 200 characters or fewer.",
-      "taskNotesTooLong": "Task #{index}: description must be 2000 characters or fewer.",
       "fileTooLarge": "This file is too large to import."
     },
     "task": {
@@ -586,7 +586,7 @@
       "reorderRequiresBoardAccess": "Moving this task or changing its status isn't available with access to only this one task — ask the owner for board access.",
       "titleRequired": "Task title is required.",
       "titleTooLong": "Task title must be 200 characters or fewer.",
-      "notesTooLong": "Task description must be 2000 characters or fewer.",
+      "notesTooLong": "Task description must be 20000 characters or fewer.",
       "invalidStatus": "Invalid task status.",
       "positionConflict": "This board changed while you were working. Please try again.",
       "plannedMinutesInvalid": "Enter a valid estimate (0–59 minutes, whole numbers).",
@@ -646,6 +646,7 @@
       "notFound": "This competency chat is not available."
     },
     "generic": "Something went wrong. Please try again.",
+    "network": "Can't reach the server. Check that the backend is running and try again.",
     "chat": {
       "replyTargetInvalid": "The message you're replying to could not be found in this conversation.",
       "forwardFromDmForbidden": "Messages from direct conversations can't be forwarded.",

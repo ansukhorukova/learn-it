@@ -7,7 +7,11 @@ const storage = require('../lib/storage');
 const personalStatus = require('./taskPersonalStatus.service');
 
 const TITLE_MAX_LENGTH = 200;
-const NOTES_MAX_LENGTH = 2000;
+// The "Description" field (`tasks.notes`). 20000 rather than a shorter limit
+// because board import (US-041) writes the full text of a book section here —
+// it used to land in a separate note attachment. Manual editing and import
+// share this one number.
+const NOTES_MAX_LENGTH = 20000;
 const STATUSES = ['planned', 'in_progress', 'done'];
 const DEFAULT_STATUS = STATUSES[0];
 // US-020 AC5: "~166 годин" — the approved AC's own upper bound for the

@@ -837,30 +837,33 @@ paths:
 
   /boards/import:
     post:
-      summary: Import a board (with tasks + note attachments) from a file
+      summary: Import a board (with tasks) from a file
       description: >
-        US-037 — a top-level action resource (same pattern as `POST
-        /chat/forwards`): bulk-creates a board plus every task and every
-        task's optional note attachment from one parsed JSON file, in a
-        SINGLE all-or-nothing transaction. There is no partial import — any
-        critical validation failure (400/413 below) is thrown BEFORE the
-        transaction opens, so nothing is created.
+        US-037 / US-041 — a top-level action resource (same pattern as `POST
+        /chat/forwards`): bulk-creates a board plus every task from one
+        parsed JSON file, in a SINGLE all-or-nothing transaction. There is
+        no partial import — any critical validation failure (400/413 below)
+        is thrown BEFORE the transaction opens, so nothing is created.
+
+        Each task's `notes` field is its Description (`tasks.notes`) — for
+        book imports this is the full text of a section. The import creates
+        no attachments (US-041): a legacy `attachment.body` in an older
+        file is still accepted and folded into `notes` when `notes` itself
+        is absent.
 
         Auth only, no role check — the caller creates their OWN board,
         exactly like `POST /boards`. Server-authoritative fields (AC4): the
         new board is always `visibility: 'private'`, every task is
         `status: 'planned'` with `position = (index + 1) * 1000` in file
-        order, every attachment is `kind: 'note'` / `visibility: 'private'`,
-        and `ownerId`/`createdBy` is always the caller — any of these
+        order, and `ownerId`/`createdBy` is always the caller — any of these
         present in the file is ignored.
 
         Non-critical issues never block the import and come back in
         `warnings` (a list of `{code, params}` — a locale key + its params,
         formatted by the FE's own dictionary, same principle as an error
         `messageKey`): an unknown/inactive `category` or `languages` slug,
-        an invalid `planned_minutes` (dropped to null), an empty attachment
-        body (attachment skipped), or an attachment body over 20000
-        characters (trimmed to 20000).
+        an invalid `planned_minutes` (dropped to null), or a `notes`
+        description over 20000 characters (trimmed to 20000).
 
         The request body has its own 1 MB limit (AC15), independent of
         other endpoints — over it is `413 errors.boardImport.fileTooLarge`.
@@ -895,7 +898,6 @@ paths:
             `errors.boardImport.tooManyTasks` (params `{max}`, over 200),
             `errors.boardImport.taskTitleRequired` (params `{index}`,
             1-based), `errors.boardImport.taskTitleTooLong` (params
-            `{index}`), `errors.boardImport.taskNotesTooLong` (params
             `{index}`).
           content:
             application/json:
@@ -1183,7 +1185,7 @@ paths:
                 notes:
                   type: string
                   nullable: true
-                  maxLength: 2000
+                  maxLength: 20000
                   description: Task description, shown/edited in the task panel.
               required: [title]
       responses:
@@ -1532,7 +1534,7 @@ paths:
                 notes:
                   type: string
                   nullable: true
-                  maxLength: 2000
+                  maxLength: 20000
                   description: Task description, shown/edited in the task panel. Same access rule as the title-only edit path — never requires board-level access.
                 status:
                   type: string
@@ -3252,11 +3254,11 @@ components:
     BoardImportRequest:
       type: object
       description: >
-        US-037 — the parsed import file. This is the contract between the
-        (out-of-repo) Claude Skill that generates the file and this API.
-        Server-authoritative fields (visibility/status/owner/position) are
-        NOT part of this schema — anything like them present in the file is
-        ignored (AC4).
+        US-037 / US-041 — the parsed import file. This is the contract
+        between the (out-of-repo) Claude Skill that generates the file and
+        this API. Server-authoritative fields
+        (visibility/status/owner/position) are NOT part of this schema —
+        anything like them present in the file is ignored (AC4).
       properties:
         board:
           type: object
@@ -3307,22 +3309,22 @@ components:
               notes:
                 type: string
                 nullable: true
-                maxLength: 2000
+                maxLength: 20000
+                description: >
+                  The task's Description (`tasks.notes`). For book imports
+                  this is the full text of a section. Over 20000 chars after
+                  trim → sliced to 20000 + a `taskNotesTruncated` warning
+                  (not a critical error). Empty/missing → no description.
               attachment:
                 type: object
                 nullable: true
+                deprecated: true
                 description: >
-                  Always treated as `kind: 'note'`. Empty `body` → no
-                  attachment + a warning. `body` over 20000 chars → trimmed
-                  to 20000 + a warning. `title` over 200 chars → sliced, no
-                  warning.
+                  US-041: the import no longer creates attachments. Accepted
+                  only for back-compat with files an older Skill generated —
+                  `attachment.body` is used as the `notes` source when
+                  `notes` itself is absent. Prefer sending `notes` directly.
                 properties:
-                  kind:
-                    type: string
-                    description: Ignored — always treated as `note`.
-                  title:
-                    type: string
-                    nullable: true
                   body:
                     type: string
             required: [title]
@@ -3341,9 +3343,9 @@ components:
           description: >
             One of `board.import.warning.unknownCategory` /
             `.inactiveCategory` / `.unknownLanguage` / `.inactiveLanguage`
-            (params `{slug}`), `.plannedMinutesDropped` /
-            `.attachmentSkipped` (params `{taskTitle}`), or
-            `.attachmentBodyTruncated` (params `{taskTitle, max}`).
+            (params `{slug}`), `.plannedMinutesDropped` (params
+            `{taskTitle}`), or `.taskNotesTruncated` (params
+            `{taskTitle, max}`).
           example: board.import.warning.unknownCategory
         params:
           type: object
@@ -3363,14 +3365,11 @@ components:
             tasks.
         createdTaskCount:
           type: integer
-        createdAttachmentCount:
-          type: integer
-          description: Number of tasks that had a non-empty attachment body (≤ createdTaskCount).
         warnings:
           type: array
           items:
             $ref: '#/components/schemas/BoardImportWarning'
-      required: [board, createdTaskCount, createdAttachmentCount, warnings]
+      required: [board, createdTaskCount, warnings]
 
     Language:
       type: object
