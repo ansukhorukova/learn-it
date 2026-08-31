@@ -59,9 +59,9 @@
 }
 
 .teacherBadge {
-  background: var(--color-accent-amber);
+  background: var(--color-primary);
   color: var(--color-bg);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 2px var(--space-3);
   font-size: 0.75rem;
   font-weight: 700;
@@ -102,7 +102,7 @@
 
 .messageButton {
   align-self: flex-start;
-  background: var(--color-text);
+  background: var(--color-primary);
   color: var(--color-bg);
   border: none;
   border-radius: var(--radius-sm);

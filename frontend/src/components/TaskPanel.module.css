@@ -309,7 +309,7 @@
 }
 
 .submit {
-  background: var(--color-text);
+  background: var(--color-primary);
   color: var(--color-bg);
   border: none;
   border-radius: var(--radius-sm);
@@ -385,7 +385,7 @@
 }
 
 .timerButton {
-  background: var(--color-text);
+  background: var(--color-primary);
   color: var(--color-bg);
   border: none;
   border-radius: var(--radius-sm);

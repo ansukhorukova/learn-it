@@ -26,14 +26,51 @@ h2,
 h3 {
   font-family: var(--font-heading);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font-family: inherit;
   color: inherit;
 }
 
 a {
   color: inherit;
+}
+
+::selection {
+  background: rgba(255, 59, 145, 0.3);
+}
+
+/* Pink focus ring everywhere as a baseline — components may still set their
+   own :focus-visible outline; this covers anything that doesn't. */
+:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Subtle, uniform micro-interactions (brand: 120–180ms, no bouncing UI) */
+button {
+  transition:
+    background-color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease),
+    box-shadow var(--motion-fast) var(--ease),
+    opacity var(--motion-fast) var(--ease);
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

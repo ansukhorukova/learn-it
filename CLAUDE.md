@@ -115,7 +115,7 @@ Firebase (безкоштовний Spark-план) потрібен лише д�
 
 ## Стилізація
 
-Warm dark surfaces, один amber-акцент для активних таймерів, пейринг шрифтів Sora/Manrope, усе через design tokens (без хардкоду кольорів). Кожен роут має власні head-метадані (title, description, og tags).
+Дизайн-система — **Anastasiya Brand System** ("Dark technical foundation. Pink energy. Human warmth.", джерело правди — `anastasiya-brand-package/`). Near-black технічна база, brand-pink (`--color-primary`, `#FF3B91`) — акцент для головної дії в блоці / вибраного стану / емфази (ніколи не фон), amber (`--color-accent-amber`) звужений до стану активного таймера й warning/reconnecting, семантичні green/blue/red не перефарбовуються. Шрифт — Inter. Усе через design tokens у `frontend/src/styles/tokens.css` (без хардкоду кольорів; значення відповідають `anastasiya-brand-package/brand/design-tokens.json`). Правило дозування: 80% функціонального dark UI + 15% brand-характеру + 5% світіння; коли екран перевантажений — прибирати декор, не характер. Кожен роут має власні head-метадані (title, description, og tags).
 
 ## Деплой (production)
 
